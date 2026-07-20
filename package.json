@@ -1,0 +1,25 @@
+{
+  "name": "site-downloader",
+  "version": "1.0.0",
+  "description": "CLI tool to download/clone websites by URL - clean, fast, free",
+  "type": "module",
+  "main": "index.js",
+  "bin": {
+    "site-downloader": "index.js"
+  },
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "archiver": "^7.0.0",
+    "cli-progress": "^3.12.0",
+    "puppeteer": "^24.0.0"
+  },
+  "keywords": [
+    "website-downloader",
+    "site-cloner",
+    "wget",
+    "puppeteer",
+    "static-site"
+  ]
+}

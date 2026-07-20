@@ -1,0 +1,18 @@
+# Dependencies
+node_modules/
+
+# Local downloaded data
+my-site/
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS metadata
+.DS_Store
+Thumbs.db

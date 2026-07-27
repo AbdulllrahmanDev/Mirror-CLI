@@ -1,12 +1,15 @@
 import fs from 'fs';
 import path from 'path';
-import https from 'https';
-import http from 'http';
+import { get } from 'https';
 import { URL } from 'url';
-import { classifyAsset, getCleanAssetPath, isTrackerOrAnalytics, resetFilenameCache } from './organizer.js';
 
 const globalAssetMap = new Map();
 const downloading = new Set();
+const filenameCache = new Map();
+
+function resetFilenameCache() {
+  filenameCache.clear();
+}
 
 function downloadFile(urlStr, destPath, retries = 3) {
   return new Promise((resolve) => {
@@ -20,38 +23,35 @@ function downloadFile(urlStr, destPath, retries = 3) {
     }
     downloading.add(urlStr);
 
-    fs.mkdirSync(path.dirname(destPath), { recursive: true });
-
     const attempt = (attemptsLeft) => {
       try {
-        const u = new URL(urlStr);
-        const isHttps = u.protocol === 'https:';
-        const getFunc = isHttps ? https.get : http.get;
+        fs.mkdirSync(path.dirname(destPath), { recursive: true });
 
+        const u = new URL(urlStr);
         const options = {
           hostname: u.hostname,
           path: u.pathname + u.search,
-          port: u.port || (isHttps ? 443 : 80),
+          port: u.port || 443,
           method: 'GET',
           headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept': '*/*'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
           },
           rejectUnauthorized: false,
-          timeout: 20000
+          timeout: 15000
         };
 
-        const req = getFunc(options, (res) => {
+        const req = get(options, (res) => {
           if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
             try {
               const redirectUrl = new URL(res.headers.location, urlStr).href;
               downloading.delete(urlStr);
-              downloadFile(redirectUrl, destPath, retries).then(resolve);
+              downloadFile(redirectUrl, destPath, attemptsLeft - 1).then(resolve);
+              return;
             } catch {
               downloading.delete(urlStr);
               resolve(null);
+              return;
             }
-            return;
           }
 
           if (res.statusCode !== 200) {
@@ -82,6 +82,7 @@ function downloadFile(urlStr, destPath, retries = 3) {
             resolve(null);
           }
         });
+
         req.on('timeout', () => {
           req.destroy();
           if (attemptsLeft > 1) {
@@ -99,6 +100,76 @@ function downloadFile(urlStr, destPath, retries = 3) {
 
     attempt(retries);
   });
+}
+
+function classifyAsset(urlStr) {
+  try {
+    const u = new URL(urlStr);
+    const pathname = u.pathname.toLowerCase();
+    if (pathname.match(/\.(png|jpg|jpeg|gif|svg|webp|ico|avif|bmp)$/)) return 'img';
+    if (pathname.match(/\.(css)$/)) return 'css';
+    if (pathname.match(/\.(js|mjs|cjs)$/)) return 'js';
+    if (pathname.match(/\.(woff|woff2|ttf|eot|otf)$/)) return 'font';
+    if (pathname.match(/\.(html|htm|php|asp|aspx)$/) || pathname.endsWith('/')) return 'page';
+    return 'other';
+  } catch {
+    return 'other';
+  }
+}
+
+function isTrackerOrAnalytics(urlStr) {
+  const trackers = [
+    'google-analytics.com', 'googletagmanager.com', 'analytics.js',
+    'gtag/js', 'facebook.net', 'connect.facebook.net', 'pixel.js',
+    'hotjar.com', 'mixpanel.com', 'segment.io', 'doubleclick.net'
+  ];
+  return trackers.some(t => urlStr.includes(t));
+}
+
+function getCleanAssetPath(urlStr, category, outputDir) {
+  if (filenameCache.has(urlStr)) {
+    return filenameCache.get(urlStr);
+  }
+
+  try {
+    const u = new URL(urlStr);
+    let pathname = u.pathname;
+    
+    if (pathname.endsWith('/') || !pathname.includes('.')) {
+      pathname = path.join(pathname, 'asset.bin');
+    }
+
+    let basename = path.basename(pathname);
+    basename = basename.replace(/[<>:"/\\|?*]/g, '_');
+    
+    const subDirs = {
+      img: 'assets/images',
+      css: 'assets/css',
+      js: 'assets/js',
+      font: 'assets/fonts',
+      other: 'assets/misc'
+    };
+
+    const targetSubDir = subDirs[category] || 'assets/misc';
+    let relPath = path.join(targetSubDir, basename).replace(/\\/g, '/');
+
+    let counter = 1;
+    const nameWithoutExt = path.parse(basename).name;
+    const ext = path.parse(basename).ext;
+
+    while (fs.existsSync(path.join(outputDir, relPath)) && counter < 1000) {
+      const newName = `${nameWithoutExt}_${counter}${ext}`;
+      relPath = path.join(targetSubDir, newName).replace(/\\/g, '/');
+      counter++;
+    }
+
+    filenameCache.set(urlStr, relPath);
+    return relPath;
+  } catch {
+    const fallback = `assets/misc/asset_${Date.now()}.bin`;
+    filenameCache.set(urlStr, fallback);
+    return fallback;
+  }
 }
 
 async function runWithConcurrency(tasks, limit = 12) {
@@ -131,22 +202,6 @@ function extractAssetUrls(html, baseUrl) {
     } catch { /* skip */ }
   }
 
-  const srcsetRegex = /srcset\s*=\s*["']([^"']+)["']/gi;
-  while ((match = srcsetRegex.exec(html)) !== null) {
-    const parts = match[1].split(',');
-    for (const part of parts) {
-      const src = part.trim().split(/\s+/)[0];
-      if (src && !src.startsWith('data:')) {
-        try {
-          const resolved = new URL(src, baseUrl).href;
-          if (resolved.startsWith('http://') || resolved.startsWith('https://')) {
-            urls.add(resolved);
-          }
-        } catch { /* skip */ }
-      }
-    }
-  }
-
   const cssUrlRegex = /url\((['"]?)([^'")]+)\1\)/gi;
   while ((match = cssUrlRegex.exec(html)) !== null) {
     try {
@@ -162,47 +217,27 @@ function extractAssetUrls(html, baseUrl) {
   return [...urls];
 }
 
-export async function downloadAssets(html, pageUrl, outputDir, options = {}) {
-  const { verbose = false, keepAnalytics = false, capturedResponses = new Map() } = options;
+export async function downloadAssets(html, pageUrl, outputDir, verbose = false, onProgress = null) {
   const pageAssetMap = new Map();
-
-  // First: Save all captured responses from Puppeteer runtime execution
-  for (const [assetUrl, buffer] of capturedResponses.entries()) {
-    const category = classifyAsset(assetUrl);
-    if (category === 'page') continue;
-
-    if (!keepAnalytics && isTrackerOrAnalytics(assetUrl)) continue;
-
-    if (!globalAssetMap.has(assetUrl)) {
-      const cleanRelPath = getCleanAssetPath(assetUrl, category, outputDir);
-      const localPath = path.join(outputDir, cleanRelPath);
-      try {
-        fs.mkdirSync(path.dirname(localPath), { recursive: true });
-        fs.writeFileSync(localPath, buffer);
-        globalAssetMap.set(assetUrl, cleanRelPath);
-
-        if (category === 'css') {
-          await processCssEmbeddedAssets(localPath, assetUrl, outputDir, options);
-        }
-      } catch { /* skip write error */ }
-    }
-    pageAssetMap.set(assetUrl, globalAssetMap.get(assetUrl));
-  }
-
-  // Second: Extract asset URLs from HTML DOM
   const urls = extractAssetUrls(html, pageUrl);
+  let completedCount = 0;
 
   const tasks = urls.map((assetUrl) => async () => {
     const category = classifyAsset(assetUrl);
-    if (category === 'page') return;
+    if (category === 'page') {
+      completedCount++;
+      return;
+    }
 
-    if (!keepAnalytics && isTrackerOrAnalytics(assetUrl)) {
-      if (verbose) console.log(`  Filtered analytics/tracker: ${assetUrl}`);
+    if (isTrackerOrAnalytics(assetUrl)) {
+      completedCount++;
       return;
     }
 
     if (globalAssetMap.has(assetUrl)) {
       pageAssetMap.set(assetUrl, globalAssetMap.get(assetUrl));
+      completedCount++;
+      if (onProgress) onProgress(assetUrl, completedCount, urls.length);
       return;
     }
 
@@ -213,68 +248,58 @@ export async function downloadAssets(html, pageUrl, outputDir, options = {}) {
     if (result) {
       globalAssetMap.set(assetUrl, cleanRelPath);
       pageAssetMap.set(assetUrl, cleanRelPath);
-
-      if (category === 'css') {
-        await processCssEmbeddedAssets(localPath, assetUrl, outputDir, options);
-      }
     }
+    completedCount++;
+    if (onProgress) onProgress(assetUrl, completedCount, urls.length);
   });
 
   await runWithConcurrency(tasks, 12);
   return globalAssetMap;
 }
 
-async function processCssEmbeddedAssets(cssPath, cssUrl, outputDir, options) {
-  try {
-    if (!fs.existsSync(cssPath)) return;
-    let cssContent = fs.readFileSync(cssPath, 'utf-8');
-    const cssUrlRegex = /url\((['"]?)([^'")]+)\1\)/gi;
-
-    let match;
-    const embeddedUrls = new Set();
-    while ((match = cssUrlRegex.exec(cssContent)) !== null) {
-      const href = match[2].trim();
-      if (!href || href.startsWith('data:')) continue;
-      try {
-        const resolved = new URL(href, cssUrl).href;
-        if (resolved.startsWith('http://') || resolved.startsWith('https://')) {
-          embeddedUrls.add({ raw: href, resolved });
-        }
-      } catch { /* skip */ }
-    }
-
-    const cssDirFromRoot = path.dirname(path.relative(outputDir, cssPath)).replace(/\\/g, '/');
-
-    for (const item of embeddedUrls) {
-      let cleanRelPath = globalAssetMap.get(item.resolved);
-      if (!cleanRelPath) {
-        const category = classifyAsset(item.resolved);
-        if (category === 'page') continue;
-
-        cleanRelPath = getCleanAssetPath(item.resolved, category, outputDir);
-        const localPath = path.join(outputDir, cleanRelPath);
-
-        const result = await downloadFile(item.resolved, localPath);
-        if (result) {
-          globalAssetMap.set(item.resolved, cleanRelPath);
-        } else {
-          cleanRelPath = null;
-        }
-      }
-
-      if (cleanRelPath) {
-        let relFromCss = path.posix.relative(cssDirFromRoot, cleanRelPath);
-        if (!relFromCss.startsWith('.')) relFromCss = './' + relFromCss;
-        cssContent = cssContent.split(item.raw).join(relFromCss);
-      }
-    }
-
-    fs.writeFileSync(cssPath, cssContent, 'utf-8');
-  } catch { /* ignore */ }
-}
-
 export function resetDownloaderState() {
   globalAssetMap.clear();
   downloading.clear();
   resetFilenameCache();
+}
+
+export function getAssetCategoryTelemetry(assetsDir) {
+  const categories = {
+    images: { count: 0, size: 0, icon: '-', name: 'Images' },
+    stylesheets: { count: 0, size: 0, icon: '-', name: 'Stylesheets' },
+    scripts: { count: 0, size: 0, icon: '-', name: 'Scripts' },
+    fonts: { count: 0, size: 0, icon: '-', name: 'Fonts' },
+    other: { count: 0, size: 0, icon: '-', name: 'Other Assets' }
+  };
+
+  function walk(dir) {
+    if (!fs.existsSync(dir)) return;
+    const entries = fs.readdirSync(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      const fullPath = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        walk(fullPath);
+      } else if (entry.isFile()) {
+        const stats = fs.statSync(fullPath);
+        const ext = path.extname(entry.name).toLowerCase();
+        let cat = 'other';
+
+        if (['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.ico', '.avif'].includes(ext)) {
+          cat = 'images';
+        } else if (['.css'].includes(ext)) {
+          cat = 'stylesheets';
+        } else if (['.js', '.mjs', '.cjs'].includes(ext)) {
+          cat = 'scripts';
+        } else if (['.woff', '.woff2', '.ttf', '.eot', '.otf'].includes(ext)) {
+          cat = 'fonts';
+        }
+
+        categories[cat].count++;
+        categories[cat].size += stats.size;
+      }
+    }
+  }
+
+  walk(assetsDir);
+  return categories;
 }

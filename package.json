@@ -1,6 +1,6 @@
 {
   "name": "site-downloader",
-  "version": "1.0.0",
+  "version": "1.2.9",
   "description": "CLI tool to download/clone websites by URL - clean, fast, free",
   "type": "module",
   "main": "index.js",
@@ -11,8 +11,17 @@
     "start": "node index.js"
   },
   "dependencies": {
+    "@inquirer/prompts": "^8.5.2",
     "archiver": "^7.0.0",
+    "boxen": "^8.0.1",
+    "chalk": "^6.0.0",
+    "cheerio": "^1.2.0",
     "cli-progress": "^3.12.0",
+    "cli-table3": "^0.6.5",
+    "figlet": "^1.11.3",
+    "gradient-string": "^3.0.0",
+    "open": "^11.0.0",
+    "ora": "^9.4.1",
     "puppeteer": "^24.0.0"
   },
   "keywords": [

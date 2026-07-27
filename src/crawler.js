@@ -54,7 +54,7 @@ function urlToFilename(urlStr, startUrl) {
   }
 }
 
-export async function crawlSite(startUrl, { maxDepth = 3, verbose = false } = {}) {
+export async function crawlSite(startUrl, { maxDepth = 3, verbose = false, onProgress = null } = {}) {
   visited.clear();
   pages.length = 0;
 
@@ -76,6 +76,10 @@ export async function crawlSite(startUrl, { maxDepth = 3, verbose = false } = {}
       if (!normalized || visited.has(normalized)) continue;
       if (item.depth > maxDepth) continue;
       visited.add(normalized);
+
+      if (onProgress) {
+        onProgress(normalized, pages.length);
+      }
 
       if (verbose) console.log(`  Crawling: ${normalized}`);
 

@@ -175,6 +175,7 @@ export async function showMainMenu() {
       choices: [
         { name: '>  Quick Download (URL only)', value: 'quick' },
         { name: '*  Advanced Download Wizard', value: 'advanced' },
+        { name: '🤖 Export AI Skill (SKILL.md / /Mirror agent command)', value: 'skill' },
         { name: '@  Select Color Theme', value: 'theme' },
         { name: '#  View Download History', value: 'history' },
         { name: '?  Help & Usage Guide', value: 'help' },

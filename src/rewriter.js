@@ -228,11 +228,21 @@ export function rewriteHTML(html, pageUrl, baseUrl, assetMap, pageMap = new Map(
       const fullUrl = new URL(href, pageUrl).href;
       const normalizedFullUrl = fullUrl.replace(/\/$/, '');
 
+      const u = new URL(fullUrl);
+      const pathname = u.pathname;
+      const relPathname = pathname.replace(/^\//, '');
+
       if (pageMap.has(fullUrl)) {
         const targetFilename = pageMap.get(fullUrl);
         $(el).attr('href', toRelative(pageFilename, targetFilename));
       } else if (pageMap.has(normalizedFullUrl)) {
         const targetFilename = pageMap.get(normalizedFullUrl);
+        $(el).attr('href', toRelative(pageFilename, targetFilename));
+      } else if (pageMap.has(pathname)) {
+        const targetFilename = pageMap.get(pathname);
+        $(el).attr('href', toRelative(pageFilename, targetFilename));
+      } else if (pageMap.has(relPathname)) {
+        const targetFilename = pageMap.get(relPathname);
         $(el).attr('href', toRelative(pageFilename, targetFilename));
       } else {
         const resolved = resolveAssetPath(href, pageUrl, assetMap, pageFilename);

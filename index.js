@@ -158,16 +158,28 @@ async function main() {
 
     // Step 3: Rewrite HTML
     const rewriteSpinner = createSpinner('Step [3/4]: Rewriting HTML links and assets...').start();
+
+    // Build pageMap for cross-page link rewriting
+    const pageMap = new Map();
     for (const page of pages) {
-      const rewritten = rewriteHTML(page.html, page.url, targetUrl, allAssets);
-      const pagePath = path.join(pagesDir, page.filename);
-      fs.mkdirSync(path.dirname(pagePath), { recursive: true });
-      fs.writeFileSync(pagePath, rewritten, 'utf-8');
+      pageMap.set(page.url, page.filename);
+      try {
+        const u = new URL(page.url);
+        pageMap.set(u.pathname, page.filename);
+        pageMap.set(u.pathname.replace(/^\//, ''), page.filename);
+        pageMap.set(u.origin + u.pathname, page.filename);
+      } catch { /* skip */ }
     }
 
-    const indexPath = path.join(outPath, 'index.html');
-    if (!fs.existsSync(indexPath) && fs.existsSync(path.join(pagesDir, 'index.html'))) {
-      fs.copyFileSync(path.join(pagesDir, 'index.html'), indexPath);
+    for (const page of pages) {
+      const rewritten = rewriteHTML(page.html, page.url, targetUrl, allAssets, pageMap, {
+        bundle: false,
+        keepAnalytics: false,
+        pageFilename: page.filename
+      });
+      const pagePath = path.join(outPath, page.filename);
+      fs.mkdirSync(path.dirname(pagePath), { recursive: true });
+      fs.writeFileSync(pagePath, rewritten, 'utf-8');
     }
     rewriteSpinner.succeed(`Step [3/4]: Rewrote & saved ${pages.length} HTML document(s).`);
 

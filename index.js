@@ -20,6 +20,7 @@ import {
   setTheme
 } from './src/ui.js';
 import { runSkillInstaller } from './src/skill-installer.js';
+import { runPromptGeneratorWizard } from './src/prompt-generator.js';
 import fs from 'fs';
 import path from 'path';
 
@@ -47,6 +48,11 @@ async function main() {
     process.exit(0);
   }
 
+  if (args.includes('--prompt') || args.includes('-p')) {
+    await runPromptGeneratorWizard();
+    process.exit(0);
+  }
+
   let config = null;
 
   if (args.length === 0) {
@@ -57,6 +63,8 @@ async function main() {
         config = await runInteractiveWizard(false);
       } else if (choice === 'advanced') {
         config = await runInteractiveWizard(true);
+      } else if (choice === 'prompt') {
+        await runPromptGeneratorWizard();
       } else if (choice === 'skill') {
         await runSkillInstaller();
       } else if (choice === 'theme') {

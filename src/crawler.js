@@ -40,13 +40,26 @@ function urlToFilename(urlStr, startUrl) {
     const startObj = new URL(startUrl);
     const u = new URL(urlStr);
 
-    if (u.pathname === '/' || u.pathname === startObj.pathname) {
+    let p = u.pathname || '/';
+    if (p.endsWith('/') && p !== '/') p = p.slice(0, -1);
+
+    if (p === '' || p === '/' || u.href === startUrl || p === startObj.pathname) {
       return 'index.html';
     }
 
-    let slug = u.pathname.replace(/^\//, '').replace(/\/$/, '');
-    slug = slug.replace(/[^a-zA-Z0-9_-]/g, '_').replace(/_+/g, '_');
-    if (!slug) slug = 'page';
+    // Clean leading slash
+    p = p.replace(/^\//, '');
+
+    // Strip redundant leading "pages/" if already present to prevent pages/pages/ nesting
+    if (p.startsWith('pages/')) {
+      p = p.substring(6);
+    }
+
+    // Remove file extensions
+    p = p.replace(/\.(html|htm|php|asp|aspx)$/i, '');
+
+    let slug = p.replace(/[^a-zA-Z0-9_-]/g, '_').replace(/_+/g, '_');
+    if (!slug || slug === 'index') return 'index.html';
 
     return `pages/${slug}.html`;
   } catch {
@@ -64,7 +77,14 @@ export async function crawlSite(startUrl, { maxDepth = 3, verbose = false, onPro
 
   const browser = await puppeteer.launch({
     headless: 'new',
-    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
+    args: [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-web-security',
+      '--allow-running-insecure-content',
+      '--disable-features=IsolateOrigins,site-per-process'
+    ]
   });
 
   try {
@@ -99,13 +119,13 @@ export async function crawlSite(startUrl, { maxDepth = 3, verbose = false, onPro
 
         await page.goto(normalized, {
           waitUntil: 'networkidle2',
-          timeout: 30000
+          timeout: 35000
         });
 
         await autoScroll(page);
 
-        // Wait a small delay for dynamic JS chunks to finish loading after scroll
-        await page.evaluate(() => new Promise(r => setTimeout(r, 1000)));
+        // Delay to allow dynamic animations/chunks to finish rendering
+        await page.evaluate(() => new Promise(r => setTimeout(r, 1200)));
 
         const html = await page.content();
         const pageUrl = page.url();
@@ -152,16 +172,17 @@ async function autoScroll(page) {
     await page.evaluate(async () => {
       await new Promise((resolve) => {
         let totalHeight = 0;
-        const distance = 300;
+        const distance = 350;
         const timer = setInterval(() => {
-          const scrollHeight = document.body.scrollHeight || 1000;
+          const scrollHeight = document.body.scrollHeight || 1200;
           window.scrollBy(0, distance);
           totalHeight += distance;
-          if (totalHeight >= scrollHeight || totalHeight > 3000) {
+          if (totalHeight >= scrollHeight || totalHeight > 4000) {
             clearInterval(timer);
+            window.scrollTo(0, 0); // Scroll back to top for initial animation triggers
             resolve();
           }
-        }, 50);
+        }, 40);
       });
     });
   } catch { /* skip scroll errors */ }

@@ -2,13 +2,33 @@ import fs from 'fs';
 import path from 'path';
 import { get } from 'https';
 import { URL } from 'url';
+import crypto from 'crypto';
 
 const globalAssetMap = new Map();
 const downloading = new Set();
 const filenameCache = new Map();
 
-function resetFilenameCache() {
+export function resetFilenameCache() {
   filenameCache.clear();
+}
+
+export function registerAssetInMap(assetUrl, cleanRelPath) {
+  if (!assetUrl || !cleanRelPath) return;
+  const formattedRel = cleanRelPath.replace(/\\/g, '/');
+  globalAssetMap.set(assetUrl, formattedRel);
+  try {
+    const u = new URL(assetUrl);
+    globalAssetMap.set(u.pathname, formattedRel);
+    globalAssetMap.set(u.pathname.replace(/^\//, ''), formattedRel);
+    const cleanPathWithoutQuery = u.origin + u.pathname;
+    globalAssetMap.set(cleanPathWithoutQuery, formattedRel);
+    const basename = path.basename(u.pathname);
+    if (basename && basename.includes('.')) {
+      if (!globalAssetMap.has(basename)) {
+        globalAssetMap.set(basename, formattedRel);
+      }
+    }
+  } catch { /* skip */ }
 }
 
 function downloadFile(urlStr, destPath, retries = 3) {
@@ -31,10 +51,11 @@ function downloadFile(urlStr, destPath, retries = 3) {
         const options = {
           hostname: u.hostname,
           path: u.pathname + u.search,
-          port: u.port || 443,
+          port: u.port || (u.protocol === 'https:' ? 443 : 80),
           method: 'GET',
           headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': '*/*'
           },
           rejectUnauthorized: false,
           timeout: 15000
@@ -134,37 +155,43 @@ function getCleanAssetPath(urlStr, category, outputDir) {
   try {
     const u = new URL(urlStr);
     let pathname = u.pathname;
-    
-    if (pathname.endsWith('/') || !pathname.includes('.')) {
-      pathname = path.join(pathname, 'asset.bin');
+
+    let relPath = '';
+    if (pathname.startsWith('/assets/')) {
+      relPath = pathname.substring(1);
+    } else {
+      const subDirs = {
+        img: 'assets/images',
+        css: 'assets/css',
+        js: 'assets/js',
+        font: 'assets/fonts',
+        other: 'assets/misc'
+      };
+
+      let basename = path.basename(pathname);
+      if (!basename || basename === '/' || !basename.includes('.')) {
+        const ext = category === 'css' ? '.css' : category === 'js' ? '.js' : category === 'img' ? '.png' : '.bin';
+        basename = `asset_${crypto.createHash('md5').update(urlStr).digest('hex').slice(0, 8)}${ext}`;
+      }
+      basename = basename.replace(/[<>:"/\\|?*]/g, '_');
+
+      const targetSubDir = subDirs[category] || 'assets/misc';
+      relPath = path.join(targetSubDir, basename).replace(/\\/g, '/');
     }
 
-    let basename = path.basename(pathname);
-    basename = basename.replace(/[<>:"/\\|?*]/g, '_');
-    
-    const subDirs = {
-      img: 'assets/images',
-      css: 'assets/css',
-      js: 'assets/js',
-      font: 'assets/fonts',
-      other: 'assets/misc'
-    };
-
-    const targetSubDir = subDirs[category] || 'assets/misc';
-    let relPath = path.join(targetSubDir, basename).replace(/\\/g, '/');
-
     let counter = 1;
-    const nameWithoutExt = path.parse(basename).name;
-    const ext = path.parse(basename).ext;
+    const nameWithoutExt = path.parse(relPath).name;
+    const dirName = path.dirname(relPath);
+    const ext = path.parse(relPath).ext;
 
-    while (fs.existsSync(path.join(outputDir, relPath)) && counter < 1000) {
-      const newName = `${nameWithoutExt}_${counter}${ext}`;
-      relPath = path.join(targetSubDir, newName).replace(/\\/g, '/');
+    let candidate = relPath;
+    while (fs.existsSync(path.join(outputDir, candidate)) && filenameCache.get(urlStr) !== candidate && counter < 1000) {
+      candidate = path.join(dirName, `${nameWithoutExt}_${counter}${ext}`).replace(/\\/g, '/');
       counter++;
     }
 
-    filenameCache.set(urlStr, relPath);
-    return relPath;
+    filenameCache.set(urlStr, candidate);
+    return candidate;
   } catch {
     const fallback = `assets/misc/asset_${Date.now()}.bin`;
     filenameCache.set(urlStr, fallback);
@@ -189,7 +216,7 @@ async function runWithConcurrency(tasks, limit = 12) {
 function extractAssetUrls(html, baseUrl) {
   const urls = new Set();
 
-  const srcRegex = /(?:src|href|content|poster|data-src)\s*=\s*["']([^"']+)["']/gi;
+  const srcRegex = /(?:src|href|content|poster|data-src|data-href)\s*=\s*["']([^"']+)["']/gi;
   let match;
   while ((match = srcRegex.exec(html)) !== null) {
     try {
@@ -217,25 +244,38 @@ function extractAssetUrls(html, baseUrl) {
   return [...urls];
 }
 
-export async function downloadAssets(html, pageUrl, outputDir, verbose = false, onProgress = null) {
-  const pageAssetMap = new Map();
+export async function downloadAssets(html, pageUrl, outputDir, capturedResponses = new Map(), verbose = false, onProgress = null) {
+  // 1. Save all Puppeteer captured responses (dynamic JS chunks, Vite/Next.js/Webpack bundles, CSS, fonts)
+  if (capturedResponses && capturedResponses.size > 0) {
+    for (const [urlStr, buffer] of capturedResponses.entries()) {
+      if (isTrackerOrAnalytics(urlStr)) continue;
+      const category = classifyAsset(urlStr);
+      if (category === 'page') continue;
+
+      const cleanRelPath = getCleanAssetPath(urlStr, category, outputDir);
+      const localPath = path.join(outputDir, cleanRelPath);
+      try {
+        fs.mkdirSync(path.dirname(localPath), { recursive: true });
+        if (!fs.existsSync(localPath)) {
+          fs.writeFileSync(localPath, buffer);
+        }
+        registerAssetInMap(urlStr, cleanRelPath);
+      } catch { /* skip */ }
+    }
+  }
+
+  // 2. Process all extracted asset URLs from static HTML
   const urls = extractAssetUrls(html, pageUrl);
   let completedCount = 0;
 
   const tasks = urls.map((assetUrl) => async () => {
     const category = classifyAsset(assetUrl);
-    if (category === 'page') {
-      completedCount++;
-      return;
-    }
-
-    if (isTrackerOrAnalytics(assetUrl)) {
+    if (category === 'page' || isTrackerOrAnalytics(assetUrl)) {
       completedCount++;
       return;
     }
 
     if (globalAssetMap.has(assetUrl)) {
-      pageAssetMap.set(assetUrl, globalAssetMap.get(assetUrl));
       completedCount++;
       if (onProgress) onProgress(assetUrl, completedCount, urls.length);
       return;
@@ -245,9 +285,8 @@ export async function downloadAssets(html, pageUrl, outputDir, verbose = false, 
     const localPath = path.join(outputDir, cleanRelPath);
 
     const result = await downloadFile(assetUrl, localPath);
-    if (result) {
-      globalAssetMap.set(assetUrl, cleanRelPath);
-      pageAssetMap.set(assetUrl, cleanRelPath);
+    if (result || fs.existsSync(localPath)) {
+      registerAssetInMap(assetUrl, cleanRelPath);
     }
     completedCount++;
     if (onProgress) onProgress(assetUrl, completedCount, urls.length);
@@ -280,22 +319,24 @@ export function getAssetCategoryTelemetry(assetsDir) {
       if (entry.isDirectory()) {
         walk(fullPath);
       } else if (entry.isFile()) {
-        const stats = fs.statSync(fullPath);
+        const size = fs.statSync(fullPath).size;
         const ext = path.extname(entry.name).toLowerCase();
-        let cat = 'other';
-
-        if (['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.ico', '.avif'].includes(ext)) {
-          cat = 'images';
+        if (['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.ico', '.avif', '.bmp'].includes(ext)) {
+          categories.images.count++;
+          categories.images.size += size;
         } else if (['.css'].includes(ext)) {
-          cat = 'stylesheets';
+          categories.stylesheets.count++;
+          categories.stylesheets.size += size;
         } else if (['.js', '.mjs', '.cjs'].includes(ext)) {
-          cat = 'scripts';
+          categories.scripts.count++;
+          categories.scripts.size += size;
         } else if (['.woff', '.woff2', '.ttf', '.eot', '.otf'].includes(ext)) {
-          cat = 'fonts';
+          categories.fonts.count++;
+          categories.fonts.size += size;
+        } else {
+          categories.other.count++;
+          categories.other.size += size;
         }
-
-        categories[cat].count++;
-        categories[cat].size += stats.size;
       }
     }
   }

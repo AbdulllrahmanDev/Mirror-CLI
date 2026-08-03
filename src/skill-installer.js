@@ -1,11 +1,12 @@
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-import fileURLToPath from 'url';
+import { fileURLToPath } from 'url';
 import select from '@inquirer/select';
 import input from '@inquirer/input';
 import chalk from 'chalk';
 import boxen from 'boxen';
+import { generateWebsitePromptText } from './prompt-generator.js';
 
 export async function runSkillInstaller() {
   console.log(chalk.cyan.bold('\n🤖 Mirror CLI - AI Skill Exporter & Installer\n'));
@@ -56,7 +57,7 @@ export async function runSkillInstaller() {
 
     // Locate SKILL.md template
     const currentFileUrl = import.meta.url;
-    const currentFilePath = fileURLToPath ? fileURLToPath(currentFileUrl) : path.resolve('./src/skill-installer.js');
+    const currentFilePath = fileURLToPath(currentFileUrl);
     const projectRoot = path.resolve(path.dirname(currentFilePath), '..');
     const sourceSkillPath = path.join(projectRoot, 'skills', 'mirror-skill', 'SKILL.md');
 
@@ -66,26 +67,34 @@ export async function runSkillInstaller() {
     } else {
       skillContent = `---
 name: mirror-skill
-description: AI Skill for Mirror CLI. Triggered when user enters /Mirror or asks to download, mirror, clone, or generate an AI recreation prompt for any website URL.
+description: AI Skill for Mirror CLI & Website Recreation. Triggered when user enters /Mirror or asks to download, mirror, clone, or generate an AI recreation prompt for any website URL.
 ---
 
-# Mirror Skill - Website Cloning & AI Prompt Generator
+# Mirror Skill - Ultra-Fidelity Website Cloning & Responsive AI Prompt Generator
 
-Use this skill whenever the user invokes /Mirror, or asks to clone, download, mirror, or generate a design/code recreation prompt for a website or URL.
+Use this skill whenever the user invokes /Mirror, or asks to clone, download, mirror, or generate an expressive design/code recreation prompt (website_prompt.md) for any website URL.
 `;
     }
 
-    const targetFilePath = path.join(targetDir, 'SKILL.md');
-    fs.writeFileSync(targetFilePath, skillContent, 'utf8');
+    // Write SKILL.md
+    const targetSkillPath = path.join(targetDir, 'SKILL.md');
+    fs.writeFileSync(targetSkillPath, skillContent, 'utf8');
+
+    // Write sample website_prompt.md template as well so folder is complete
+    const samplePromptContent = generateWebsitePromptText('https://coursera.org', 'Full Website');
+    const targetPromptPath = path.join(targetDir, 'website_prompt.md');
+    fs.writeFileSync(targetPromptPath, samplePromptContent, 'utf8');
 
     console.log(
       boxen(
-        `${chalk.green.bold('✔ Skill Successfully Exported!')}\n\n` +
-        `Saved to: ${chalk.cyan(targetFilePath)}\n\n` +
+        `${chalk.green.bold('✔ Mirror Skill & website_prompt.md Successfully Exported!')}\n\n` +
+        `Saved to: ${chalk.cyan(targetDir)}\n` +
+        `📄 Skill File: ${chalk.yellow('SKILL.md')}\n` +
+        `📝 Sample Prompt: ${chalk.yellow('website_prompt.md')}\n\n` +
         `${chalk.yellow.bold('How to use with AI Agents:')}\n` +
         `1. Type ${chalk.bold('/Mirror <website_url>')} in your AI assistant.\n` +
-        `2. The AI will ask you to select Scope (Hero / Page / Site), Goal (Download / Prompt), and Target path.\n` +
-        `3. Mirror CLI will execute or generate the requested prompt!`,
+        `2. The AI will ask you to select Scope (Hero / Page / Site) and Goal.\n` +
+        `3. Mirror CLI will generate the full website prompt!`,
         {
           padding: 1,
           margin: 1,
@@ -95,6 +104,10 @@ Use this skill whenever the user invokes /Mirror, or asks to clone, download, mi
       )
     );
   } catch (err) {
+    if (err.name === 'ExitPromptError') {
+      console.log(chalk.yellow('\n  Export cancelled.\n'));
+      return;
+    }
     console.error(chalk.red(`\n✖ Failed to install skill: ${err.message}`));
   }
 }

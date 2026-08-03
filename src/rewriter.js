@@ -11,18 +11,41 @@ function toRelative(pageFilename, targetRelPath) {
 
 function resolveAssetPath(originalHref, pageUrl, assetMap, pageFilename) {
   if (!originalHref) return null;
+  const trimmed = originalHref.trim();
+  if (trimmed.startsWith('data:') || trimmed.startsWith('javascript:') || trimmed.startsWith('#') || trimmed.startsWith('mailto:')) {
+    return null;
+  }
+
   try {
-    const fullUrl = new URL(originalHref, pageUrl).href;
-    if (assetMap.has(fullUrl)) {
-      return toRelative(pageFilename, assetMap.get(fullUrl));
-    }
+    const fullUrl = new URL(trimmed, pageUrl).href;
     const u = new URL(fullUrl);
-    u.search = '';
-    u.hash = '';
-    if (assetMap.has(u.href)) {
-      return toRelative(pageFilename, assetMap.get(u.href));
+    const cleanFullUrl = u.origin + u.pathname;
+    const pathname = u.pathname;
+    const relPathname = pathname.replace(/^\//, '');
+    const filename = path.basename(pathname);
+
+    // 1. Match exact full URL
+    if (assetMap.has(fullUrl)) return toRelative(pageFilename, assetMap.get(fullUrl));
+    // 2. Match URL without query/hash
+    if (assetMap.has(cleanFullUrl)) return toRelative(pageFilename, assetMap.get(cleanFullUrl));
+    // 3. Match absolute pathname (/assets/js/2.BVb-LtpJ.js)
+    if (assetMap.has(pathname)) return toRelative(pageFilename, assetMap.get(pathname));
+    // 4. Match relative pathname (assets/js/2.BVb-LtpJ.js)
+    if (assetMap.has(relPathname)) return toRelative(pageFilename, assetMap.get(relPathname));
+    // 5. Match filename (2.BVb-LtpJ.js)
+    if (filename && filename.includes('.') && assetMap.has(filename)) {
+      return toRelative(pageFilename, assetMap.get(filename));
     }
-  } catch { /* skip */ }
+
+    // 6. Universal Fallback: Convert root-relative paths (/assets/...) into relative local paths
+    if (trimmed.startsWith('/')) {
+      return toRelative(pageFilename, relPathname);
+    }
+  } catch {
+    if (trimmed.startsWith('/')) {
+      return toRelative(pageFilename, trimmed.replace(/^\//, ''));
+    }
+  }
   return null;
 }
 
@@ -194,7 +217,7 @@ export function rewriteHTML(html, pageUrl, baseUrl, assetMap, pageMap = new Map(
     }
   });
 
-  // 9. Update internal page links (<a> tags)
+  // 9. Update internal page links (<a> tags) & sanitize .bin targets
   $('a[href]').each((_, el) => {
     const href = $(el).attr('href');
     if (!href || href.startsWith('#') || href.startsWith('javascript:') || href.startsWith('mailto:') || href.startsWith('tel:')) {
@@ -213,10 +236,27 @@ export function rewriteHTML(html, pageUrl, baseUrl, assetMap, pageMap = new Map(
         $(el).attr('href', toRelative(pageFilename, targetFilename));
       } else {
         const resolved = resolveAssetPath(href, pageUrl, assetMap, pageFilename);
-        if (resolved) $(el).attr('href', resolved);
+        if (resolved) {
+          if (resolved.endsWith('.bin') || resolved.includes('asset.bin')) {
+            const anchorHash = href.includes('#') ? '#' + href.split('#')[1] : '#';
+            $(el).attr('href', anchorHash);
+          } else {
+            $(el).attr('href', resolved);
+          }
+        }
       }
     } catch { /* skip */ }
   });
+
+  // 10. Inject Preloader & Scroll Unlock Sanitation Styles
+  if ($('head').length > 0 && !$('#mirror-scroll-fix').length) {
+    $('head').append(`
+      <style id="mirror-scroll-fix">
+        html, body { overflow: auto !important; position: relative !important; }
+        .pl-overlay, .preloader-overlay, .preloader-wrapper { pointer-events: none !important; opacity: 0 !important; visibility: hidden !important; display: none !important; }
+      </style>
+    `);
+  }
 
   return $.html();
 }

@@ -1,29 +1,11 @@
 [
   {
-    "timestamp": "2026-08-03T13:40:35.068Z",
-    "url": "https://www.cyphr.studio/",
-    "outPath": "F:\\Main\\____________\\Mirror CLI\\www.cyphr.studio",
-    "pagesCount": 24,
-    "assetsCount": 155,
-    "durationMs": 115796,
-    "zipPath": "F:\\Main\\____________\\Mirror CLI\\www.cyphr.studio.zip"
-  },
-  {
-    "timestamp": "2026-08-03T13:31:57.167Z",
-    "url": "https://www.daoism.systems/",
-    "outPath": "F:\\Main\\____________\\Mirror CLI\\www.daoism.systems",
-    "pagesCount": 1,
-    "assetsCount": 40,
-    "durationMs": 18045,
-    "zipPath": "F:\\Main\\____________\\Mirror CLI\\www.daoism.systems.zip"
-  },
-  {
-    "timestamp": "2026-08-03T13:20:55.453Z",
+    "timestamp": "2026-08-05T09:52:40.025Z",
     "url": "https://trionn.com/",
     "outPath": "F:\\Main\\____________\\Mirror CLI\\trionn.com",
     "pagesCount": 27,
-    "assetsCount": 369,
-    "durationMs": 194858,
+    "assetsCount": 1433,
+    "durationMs": 386288,
     "zipPath": "F:\\Main\\____________\\Mirror CLI\\trionn.com.zip"
   }
 ]

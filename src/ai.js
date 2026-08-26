@@ -1065,7 +1065,74 @@ export async function runAISettings() {
 }
 
 /**
- * Main AI Studio Dashboard / Menu
+ * Interactive Live Chat Session with Gemini in CLI
+ */
+export async function runAIChatSession() {
+  const theme = getTheme();
+  renderHeader();
+  console.log(theme.chalkPrimary.bold('\n[ Interactive Gemini AI Terminal Chat & Assistant ]\n'));
+  console.log(theme.chalkMuted('  Chat live with Gemini directly in your terminal. Type "exit" or "quit" to end chat.\n'));
+
+  const apiKey = await ensureApiKey(theme);
+  const config = loadAIConfig();
+  console.log(theme.chalkSecondary(`  Active Model: ${chalk.bold(config.model)} | Power Level: ${chalk.bold(config.powerLevel)}\n`));
+
+  const conversationHistory = [];
+
+  while (true) {
+    try {
+      const userMessage = await input({
+        message: theme.chalkAccent.bold('You:'),
+        validate: (val) => val.trim() ? true : 'Please enter a message or "exit"'
+      });
+
+      if (['exit', 'quit', 'q', ':q'].includes(userMessage.trim().toLowerCase())) {
+        console.log(theme.chalkMuted('\n  Ending chat session. Returning to AI menu...\n'));
+        await new Promise(r => setTimeout(r, 600));
+        break;
+      }
+
+      const spinner = ora('Gemini is thinking...').start();
+      conversationHistory.push({ role: 'user', content: userMessage.trim() });
+
+      // Build context prompt from conversation history
+      const promptText = conversationHistory
+        .slice(-10)
+        .map(m => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`)
+        .join('\n\n');
+
+      const reply = await callGemini({
+        prompt: promptText,
+        systemInstruction: 'You are an intelligent, helpful AI assistant built into Mirror CLI. You assist with web development, architecture, JavaScript, CSS styling, responsive layout, animations, design systems, and any questions. Keep answers clear, concise, and helpful.',
+        model: config.model,
+        apiKey
+      });
+
+      spinner.stop();
+      conversationHistory.push({ role: 'assistant', content: reply });
+
+      console.log(
+        boxen(reply, {
+          padding: 1,
+          margin: { top: 0, bottom: 1 },
+          borderStyle: 'round',
+          borderColor: theme.secondaryHex,
+          title: theme.chalkPrimary.bold(` [ Gemini AI (${config.model}) ] `),
+          titleAlignment: 'left'
+        })
+      );
+    } catch (err) {
+      if (err.name === 'ExitPromptError') {
+        console.log(theme.chalkMuted('\n  Chat session ended.\n'));
+        break;
+      }
+      console.log(chalk.red(`\n✖ Error: ${err.message}\n`));
+    }
+  }
+}
+
+/**
+ * Main AI Settings, Diagnostics & Chat Hub
  */
 export async function runAIMenu() {
   let inAIMenu = true;
@@ -1078,48 +1145,114 @@ export async function runAIMenu() {
 
     console.log(
       boxen(
-        `${theme.chalkPrimary.bold('Mirror CLI AI Studio & Gemini Engine')}\n` +
-        `${theme.chalkMuted('Google Gemini Models: 3.7 Flash, 3.6 Flash, 3.5 Flash, 3.1 Pro')}\n\n` +
-        `${theme.chalkSecondary('Power Level:')}   ${theme.chalkAccent.bold(activePowerDef.name)}\n` +
-        `${theme.chalkSecondary('Active Model:')}  ${theme.chalkAccent.bold(config.model)}  |  ${theme.chalkSecondary('Status:')} ${config.apiKey ? chalk.green('● API Key Configured') : chalk.red('○ Missing API Key')}`,
+        `${theme.chalkPrimary.bold('Mirror CLI — AI Settings, Diagnostics & Chat')}\n` +
+        `${theme.chalkMuted('Manage Gemini API Key, Model Selection, Power Level, Diagnostics & Terminal Chat')}\n\n` +
+        `${theme.chalkSecondary('Active Model:')}    ${theme.chalkAccent.bold(config.model)}\n` +
+        `${theme.chalkSecondary('Power Level:')}     ${theme.chalkAccent.bold(activePowerDef.name)}\n` +
+        `${theme.chalkSecondary('API Key Status:')}  ${config.apiKey ? chalk.green('● Configured & Ready') : chalk.red('○ Missing API Key')}`,
         {
           padding: 1,
           borderStyle: theme.borderStyle,
           borderColor: theme.primaryHex,
-          textAlignment: 'center'
+          textAlignment: 'center',
+          title: theme.chalkPrimary.bold(' [ AI Control Hub ] '),
+          titleAlignment: 'left'
         }
       )
     );
 
     try {
       const choice = await select({
-        message: theme.chalkPrimary('AI Studio — Select an AI Tool:'),
+        message: theme.chalkPrimary.bold('AI Control Hub — Select an option (Press [ESC] to return):'),
         choices: [
-          { name: '[1] AI Project Supervisor & Code Healer (Audit, Fix Errors & Inject Libraries)', value: 'supervisor' },
-          { name: '[2] AI Website Recreator & Code Generator (URL / Folder → Full HTML/Tailwind/React)', value: 'recreate' },
-          { name: '[3] AI Code Cleaner & Modernizer (Clean HTML/CSS, remove trackers)', value: 'clean' },
-          { name: '[4] AI Design Tokens & Color Palette Extractor', value: 'tokens' },
-          { name: '[5] Interactive AI Terminal Assistant (Live Chat with Gemini)', value: 'chat' },
-          { name: '[6] Test Gemini API Connection', value: 'test' },
-          { name: '[7] AI Settings & Power Level (High / Medium / Low / Models)', value: 'settings' },
+          { name: '[1] Configure / Change Gemini API Key', value: 'key' },
+          { name: '[2] Select AI Model (3.7 Flash, 3.6 Flash, 3.5 Flash, 3.1 Pro, Custom)', value: 'model' },
+          { name: '[3] Select AI Power Level (High Reasoning / Balanced / Fast)', value: 'power' },
+          { name: '[4] Test Gemini API Connection (Ping & Diagnostics)', value: 'test' },
+          { name: '[5] Interactive AI Chat & Assistant (Chat with Gemini in CLI)', value: 'chat' },
+          { name: '[6] Adjust Temperature & Creativity Settings', value: 'temp' },
           { name: '[<] Back to Main Menu', value: 'back' }
         ]
       });
 
-      if (choice === 'supervisor') {
-        await runAIProjectSupervisor();
-      } else if (choice === 'recreate') {
-        await runAIWebRecreator();
-      } else if (choice === 'clean') {
-        await runAICodeCleaner();
-      } else if (choice === 'tokens') {
-        await runAIDesignTokenExtractor();
-      } else if (choice === 'chat') {
-        await runAIChatSession();
+      if (choice === 'key') {
+        console.log(theme.chalkMuted('\n  Tip: Paste your key using Ctrl+V or Right-Click, then press Enter.'));
+        const newKey = await password({
+          message: theme.chalkPrimary('Enter Google Gemini API Key:'),
+          mask: '*'
+        });
+        if (newKey.trim()) {
+          config.apiKey = newKey.trim();
+          saveAIConfig(config);
+          console.log(theme.chalkPrimary.bold('\n  ✔ Gemini API Key saved successfully!\n'));
+          await new Promise(r => setTimeout(r, 1200));
+        }
+      } else if (choice === 'model') {
+        const modelChoices = GEMINI_MODELS.map(m => ({
+          name: `${m.name} ${m.id === config.model ? '✔ (Active)' : ''}`,
+          value: m.id,
+          description: m.description
+        }));
+        modelChoices.push({ name: '[+] Custom Model ID (Enter manually)', value: 'custom' });
+
+        const selectedModel = await select({
+          message: theme.chalkPrimary.bold('Choose Gemini Model:'),
+          choices: modelChoices
+        });
+
+        if (selectedModel === 'custom') {
+          const customId = await input({
+            message: theme.chalkPrimary('Enter custom model identifier (e.g. gemini-2.5-pro):')
+          });
+          if (customId.trim()) {
+            config.model = customId.trim();
+            saveAIConfig(config);
+          }
+        } else {
+          config.model = selectedModel;
+          saveAIConfig(config);
+        }
+        console.log(theme.chalkPrimary.bold(`\n  ✔ Active model set to: ${config.model}\n`));
+        await new Promise(r => setTimeout(r, 1000));
+      } else if (choice === 'power') {
+        const powerChoices = Object.keys(AI_POWER_LEVELS).map(k => {
+          const p = AI_POWER_LEVELS[k];
+          return {
+            name: `${p.name} ${config.powerLevel === k ? '✔ (Active)' : ''}`,
+            value: k,
+            description: p.description
+          };
+        });
+
+        const selectedPower = await select({
+          message: theme.chalkPrimary.bold('Choose AI Power / Reasoning Preset:'),
+          choices: powerChoices
+        });
+
+        const preset = AI_POWER_LEVELS[selectedPower];
+        config.powerLevel = selectedPower;
+        config.model = preset.model;
+        config.temperature = preset.temperature;
+        config.maxOutputTokens = preset.maxOutputTokens;
+        saveAIConfig(config);
+        console.log(theme.chalkPrimary.bold(`\n  ✔ AI Power Level updated to: ${preset.name}\n`));
+        await new Promise(r => setTimeout(r, 1000));
       } else if (choice === 'test') {
         await testGeminiConnection();
-      } else if (choice === 'settings') {
-        await runAISettings();
+      } else if (choice === 'chat') {
+        await runAIChatSession();
+      } else if (choice === 'temp') {
+        const newTemp = await input({
+          message: theme.chalkPrimary('Enter temperature (0.0 = exact reasoning, 1.0 = creative):'),
+          default: String(config.temperature)
+        });
+        const parsed = parseFloat(newTemp);
+        if (!isNaN(parsed) && parsed >= 0 && parsed <= 2.0) {
+          config.temperature = parsed;
+          saveAIConfig(config);
+          console.log(theme.chalkPrimary.bold(`\n  ✔ Temperature updated to: ${config.temperature}\n`));
+          await new Promise(r => setTimeout(r, 1000));
+        }
       } else if (choice === 'back') {
         inAIMenu = false;
       }

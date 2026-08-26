@@ -177,7 +177,7 @@ export async function showMainMenu() {
         { name: '[>]  Quick Download (URL only)', value: 'quick' },
         { name: '[*]  Advanced Download Wizard', value: 'advanced' },
         { name: '[D]  Download Directory & Output Settings', value: 'folders' },
-        { name: '[AI] AI Studio & Gemini Supervisor (Models 3.7 / 3.6 / 3.5 Flash & 3.1 Pro)', value: 'ai' },
+        { name: '[AI] AI Settings, Diagnostics & Chat (API Key, Model, Ping & Chat)', value: 'ai' },
         { name: '[P]  Generate AI Prompt (site_details.md for any URL)', value: 'prompt' },
         { name: '[+]  Export AI Skill (Antigravity IDE /Mirror command)', value: 'skill' },
         { name: '[S]  Start Local Live Server (Preview with full ES Modules & WebGL)', value: 'server' },

@@ -998,12 +998,19 @@ export async function runAIMenu() {
           await new Promise(r => setTimeout(r, 1200));
         }
       } else if (choice === 'model') {
+        const isStandardModel = GEMINI_MODELS.some(m => m.id === config.model);
         const modelChoices = GEMINI_MODELS.map(m => ({
           name: `${m.name} ${m.id === config.model ? '✔ (Active)' : ''}`,
           value: m.id,
           description: m.description
         }));
-        modelChoices.push({ name: '[+] Custom Model ID (Enter manually)', value: 'custom' });
+        
+        const customActiveText = !isStandardModel ? ` (${config.model}) ✔ (Active)` : '';
+        modelChoices.push({
+          name: `[+] Custom Model ID (Enter manually)${customActiveText}`,
+          value: 'custom',
+          description: 'Input any Google Generative AI model name (e.g. gemma-4-26b-a4b-it, fine-tuned model, etc.)'
+        });
 
         const selectedModel = await select({
           message: theme.chalkPrimary.bold('Choose Gemini Model:'),
@@ -1012,10 +1019,13 @@ export async function runAIMenu() {
 
         if (selectedModel === 'custom') {
           const customId = await input({
-            message: theme.chalkPrimary('Enter custom model identifier (e.g. gemini-2.5-pro):')
+            message: theme.chalkPrimary('Enter custom model identifier (e.g. gemma-4-26b-a4b-it or custom ID):'),
+            default: !isStandardModel ? config.model : '',
+            validate: (val) => val.trim() ? true : 'Model identifier cannot be empty.'
           });
           if (customId.trim()) {
-            config.model = customId.trim();
+            const cleanedId = customId.trim().replace(/^models\//, '');
+            config.model = cleanedId;
             saveAIConfig(config);
           }
         } else {

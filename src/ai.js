@@ -1172,15 +1172,15 @@ export async function promptSwitchProvider(theme = getTheme()) {
 
   const choices = [
     {
-      name: `[★] Google Gemini (${config.model || 'gemini-3.7-flash'}) ${activeId === 'gemini' ? chalk.green('✔ (Active)') : ''}`,
+      name: `[1] Google Gemini (${config.model || 'gemini-3.7-flash'}) ${activeId === 'gemini' ? chalk.green('✔ (Active)') : ''}`,
       value: 'gemini',
       description: 'Official Google AI Studio API (Gemini 3.7 / 3.6 / 3.5 Flash & 3.1 Pro)'
     }
   ];
 
-  (config.customProviders || []).forEach(p => {
+  (config.customProviders || []).forEach((p, i) => {
     choices.push({
-      name: `[★] ${p.name} (${p.model}) ${activeId === p.id ? chalk.green('✔ (Active)') : ''}`,
+      name: `[${i + 2}] ${p.name} (${p.model}) ${activeId === p.id ? chalk.green('✔ (Active)') : ''}`,
       value: p.id,
       description: `Endpoint: ${p.baseUrl}`
     });
@@ -1190,7 +1190,7 @@ export async function promptSwitchProvider(theme = getTheme()) {
     name: '[+] Add New Custom Provider / API...',
     value: '__add__'
   });
-  choices.push({ name: '< Cancel & Return', value: '__cancel__' });
+  choices.push({ name: '[<] Cancel & Return', value: '__cancel__' });
 
   const selected = await select({
     message: theme.chalkPrimary.bold('Select Active AI Provider & Model:'),
@@ -1237,7 +1237,7 @@ export async function promptManageCustomProviders(theme = getTheme()) {
         message: theme.chalkPrimary('Select an option:'),
         choices: [
           { name: '[+] Add New Custom Provider', value: 'add' },
-          { name: '< Back to AI Menu', value: 'back' }
+          { name: '[<] Back to AI Menu', value: 'back' }
         ]
       });
 
@@ -1255,7 +1255,7 @@ export async function promptManageCustomProviders(theme = getTheme()) {
       description: `URL: ${p.baseUrl}`
     }));
     providerChoices.push({ name: '[+] Add Another Provider', value: '__add__' });
-    providerChoices.push({ name: '< Back to AI Menu', value: '__back__' });
+    providerChoices.push({ name: '[<] Back to AI Menu', value: '__back__' });
 
     const selectedId = await select({
       message: theme.chalkPrimary.bold('Select a custom provider to manage:'),
@@ -1274,13 +1274,13 @@ export async function promptManageCustomProviders(theme = getTheme()) {
     const action = await select({
       message: theme.chalkPrimary.bold(`Manage [${targetProvider.name}]:`),
       choices: [
-        { name: `[★] Set as Active Provider ${config.activeProvider === targetProvider.id ? '(Already Active)' : ''}`, value: 'activate' },
-        { name: '[⚡] Test Connection (Ping)', value: 'test' },
-        { name: '[✏] Edit Model Identifier', value: 'edit_model' },
-        { name: '[✏] Edit Base URL', value: 'edit_url' },
-        { name: '[🔑] Update API Key', value: 'edit_key' },
+        { name: `[1] Set as Active Provider ${config.activeProvider === targetProvider.id ? '(Already Active)' : ''}`, value: 'activate' },
+        { name: '[2] Test Connection (Ping)', value: 'test' },
+        { name: '[3] Edit Model Identifier', value: 'edit_model' },
+        { name: '[4] Edit Base URL', value: 'edit_url' },
+        { name: '[5] Update API Key', value: 'edit_key' },
         { name: '[x] Delete Provider', value: 'delete' },
-        { name: '< Back to Providers List', value: 'back' }
+        { name: '[<] Back to Providers List', value: 'back' }
       ]
     });
 
@@ -1543,13 +1543,13 @@ export async function runAIMenu() {
         message: theme.chalkPrimary.bold('AI Control Hub — Select an option (Press [ESC] to return):'),
         choices: [
           { name: `[1] Switch Active Provider & Model (Current: ${provider.name})`, value: 'switch' },
-          { name: '[+] Add New Custom Provider / API (DeepSeek, OpenAI, Groq, OpenRouter...)', value: 'add' },
-          { name: '[⚙] Manage / Edit / Delete Custom Providers', value: 'manage' },
-          { name: '[G] Configure Google Gemini (API Key & Model Selection)', value: 'gemini' },
-          { name: '[⚡] Select AI Power Level (High / Balanced / Fast)', value: 'power' },
-          { name: '[✓] Test Active Connection (Ping & Diagnostics)', value: 'test' },
-          { name: '[💬] Interactive AI Chat & Assistant (Chat in CLI)', value: 'chat' },
-          { name: '[T] Adjust Temperature & Creativity Settings', value: 'temp' },
+          { name: '[2] Add New Custom Provider / API (DeepSeek, OpenAI, Groq, OpenRouter...)', value: 'add' },
+          { name: '[3] Manage / Edit / Delete Custom Providers', value: 'manage' },
+          { name: '[4] Configure Google Gemini (API Key & Model Selection)', value: 'gemini' },
+          { name: '[5] Select AI Power Level (High / Balanced / Fast)', value: 'power' },
+          { name: '[6] Test Active Connection (Ping & Diagnostics)', value: 'test' },
+          { name: '[7] Interactive AI Chat & Assistant (Chat in CLI)', value: 'chat' },
+          { name: '[8] Adjust Temperature & Creativity Settings', value: 'temp' },
           { name: '[<] Back to Main Menu', value: 'back' }
         ]
       });

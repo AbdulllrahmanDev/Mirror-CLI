@@ -24,7 +24,7 @@ import { runPromptGeneratorWizard } from './src/prompt-generator.js';
 import { runAIMenu, runAIProjectSupervisor } from './src/ai.js';
 import { runUpdateWizard } from './src/updater.js';
 import { runPreviewMenu, launchPreviewServer } from './src/server.js';
-import { runFolderSettingsWizard } from './src/config.js';
+import { runFolderSettingsWizard, resolvePathForDomain } from './src/config.js';
 import { confirm } from '@inquirer/prompts';
 import fs from 'fs';
 import path from 'path';
@@ -135,7 +135,8 @@ async function main() {
 
   try {
     const domain = new URL(targetUrl).hostname;
-    const outPath = path.resolve(outputDir || domain);
+    const resolvedDir = outputDir || resolvePathForDomain(domain);
+    const outPath = path.resolve(resolvedDir);
     const assetsDir = path.join(outPath, 'assets');
     const pagesDir = path.join(outPath, 'pages');
 

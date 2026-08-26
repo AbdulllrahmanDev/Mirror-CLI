@@ -1,5 +1,14 @@
 [
   {
+    "timestamp": "2026-08-26T10:00:39.272Z",
+    "url": "https://landonorris.com",
+    "outPath": "C:\\Users\\Drafter-5\\Desktop\\landonorris.com",
+    "pagesCount": 7,
+    "assetsCount": 1052,
+    "durationMs": 55946,
+    "zipPath": null
+  },
+  {
     "timestamp": "2026-08-26T08:36:55.557Z",
     "url": "https://wodniack.dev",
     "outPath": "F:\\Main\\____________\\Mirror-CLI\\wodniack.dev",

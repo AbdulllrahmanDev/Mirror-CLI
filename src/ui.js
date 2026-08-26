@@ -375,10 +375,10 @@ export async function runInteractiveWizard(advanced = false) {
     let createZip = false;
     let verbose = false;
 
-    // Prompt destination folder with smart presets & custom path
-    outputDir = await promptOutputDirectory(defaultDomain, theme);
-
     if (advanced) {
+      // In Advanced Wizard, allow choosing/customizing destination directory
+      outputDir = await promptOutputDirectory(defaultDomain, theme);
+
       maxDepth = await number({
         message: 'Max crawl depth (1 to 10):',
         default: 3,
@@ -395,6 +395,10 @@ export async function runInteractiveWizard(advanced = false) {
         message: 'Enable verbose diagnostic logging?',
         default: false
       });
+    } else {
+      // In Quick Download, automatically resolve path from user default settings without asking!
+      const { resolvePathForDomain } = await import('./config.js');
+      outputDir = resolvePathForDomain(defaultDomain);
     }
 
     const enableAI = await confirm({

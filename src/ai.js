@@ -57,13 +57,13 @@ export const GEMINI_MODELS = [
   },
   {
     id: 'gemini-3.5-flash',
-    name: 'Gemini 3.5 Flash (⚡ High Precision & Speed ~1.2s)',
+    name: 'Gemini 3.5 Flash (High Precision & Speed ~1.2s)',
     description: 'Balanced, high-accuracy generation for modern HTML, Tailwind & UI code',
     fallback: 'gemini-3.1-flash-lite'
   },
   {
     id: 'gemini-3.1-flash-lite',
-    name: 'Gemini 3.1 Flash Lite (⚡ Instant Response ~500ms)',
+    name: 'Gemini 3.1 Flash Lite (Instant Response ~500ms)',
     description: 'Ultra-fast, lowest latency model for instantaneous chat, diagnostics & code',
     fallback: 'gemini-3.5-flash'
   },

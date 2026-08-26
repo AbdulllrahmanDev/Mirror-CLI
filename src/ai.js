@@ -15,28 +15,28 @@ export const AI_POWER_LEVELS = {
   high: {
     id: 'high',
     name: 'High (Deep Reasoning & Maximum Fidelity)',
-    description: 'Uses flagship Gemini 3.7 Flash with low temperature (0.2) for pixel-perfect code & layout replica',
-    model: 'gemini-3.7-flash',
-    fallback: 'gemini-2.5-flash',
+    description: 'Uses Gemini 3.5 / 3.7 Flash with low temperature (0.2) for pixel-perfect code & layout replica',
+    model: 'gemini-3.5-flash',
+    fallback: 'gemini-3.1-flash-lite',
     temperature: 0.2,
     maxOutputTokens: 8192
   },
   medium: {
     id: 'medium',
     name: 'Medium (Balanced Speed & Accuracy)',
-    description: 'Uses Gemini 3.5 Flash (temp 0.7) for clean, fast, balanced HTML/CSS generation',
-    model: 'gemini-3.5-flash',
-    fallback: 'gemini-2.5-flash',
-    temperature: 0.7,
+    description: 'Uses Gemini 3.1 Flash Lite (temp 0.6) for instant, clean, balanced HTML/CSS generation',
+    model: 'gemini-3.1-flash-lite',
+    fallback: 'gemini-3.5-flash',
+    temperature: 0.6,
     maxOutputTokens: 4096
   },
   low: {
     id: 'low',
-    name: 'Low / Fast (Rapid Draft & Low Latency)',
-    description: 'Uses Gemini 3.6 Flash (temp 0.8) for ultra-fast drafts & quick component outlines',
-    model: 'gemini-3.6-flash',
-    fallback: 'gemini-2.5-flash',
-    temperature: 0.8,
+    name: 'Low / Ultra-Fast (Rapid Draft & Instant Chat)',
+    description: 'Uses Gemini 3.1 Flash Lite for lightning-fast sub-second responses & chat',
+    model: 'gemini-3.1-flash-lite',
+    fallback: 'gemini-3-flash-preview',
+    temperature: 0.7,
     maxOutputTokens: 2048
   }
 };
@@ -44,40 +44,34 @@ export const AI_POWER_LEVELS = {
 // Supported Gemini Models (Live Google AI Studio API verified)
 export const GEMINI_MODELS = [
   {
-    id: 'gemini-3.7-flash',
-    name: 'Gemini 3.7 Flash (Hybrid Reasoning & Flagship)',
-    description: 'Latest Google flagship model with advanced deep reasoning',
-    fallback: 'gemini-2.5-flash'
-  },
-  {
-    id: 'gemini-3.6-flash',
-    name: 'Gemini 3.6 Flash (High Performance & Low Latency)',
-    description: 'Optimized for rapid web analysis and real-time generation',
-    fallback: 'gemini-2.5-flash'
-  },
-  {
-    id: 'gemini-3.5-flash',
-    name: 'Gemini 3.5 Flash (Balanced Code & Design Generator)',
-    description: 'Fast, balanced output for HTML, CSS, and component extraction',
-    fallback: 'gemini-2.5-flash'
-  },
-  {
-    id: 'gemini-3.1-pro-preview',
-    name: 'Gemini 3.1 Pro Preview (Deep Architecture & Large Projects)',
-    description: 'Deep intelligence for large codebases and complex design systems',
-    fallback: 'gemini-2.5-pro'
-  },
-  {
-    id: 'gemini-2.5-flash',
-    name: 'Gemini 2.5 Flash (Ultra-Stable & Fast)',
-    description: 'Production stable Gemini 2.5 flash model',
+    id: 'gemini-3.1-flash-lite',
+    name: 'Gemini 3.1 Flash Lite (⚡ Instant Response ~500ms - Recommended)',
+    description: 'Ultra-fast, lowest latency model for instantaneous chat, diagnostics & code',
     fallback: 'gemini-3.5-flash'
   },
   {
-    id: 'gemini-2.5-pro',
-    name: 'Gemini 2.5 Pro (Massive Context & Reasoning)',
-    description: 'Deep context reasoning for large multi-page sites',
-    fallback: 'gemini-2.5-flash'
+    id: 'gemini-3.5-flash',
+    name: 'Gemini 3.5 Flash (⚡ High Precision & Speed ~1.2s)',
+    description: 'Balanced, high-accuracy generation for modern HTML, Tailwind & UI code',
+    fallback: 'gemini-3.1-flash-lite'
+  },
+  {
+    id: 'gemini-3.6-flash',
+    name: 'Gemini 3.6 Flash (High Performance & Reasoning)',
+    description: 'Advanced reasoning model for web architecture & design token extraction',
+    fallback: 'gemini-3.1-flash-lite'
+  },
+  {
+    id: 'gemini-3.7-flash',
+    name: 'Gemini 3.7 Flash (Flagship Hybrid Reasoning)',
+    description: 'Google flagship model (may have temporary queue times)',
+    fallback: 'gemini-3.1-flash-lite'
+  },
+  {
+    id: 'gemini-3-flash-preview',
+    name: 'Gemini 3 Flash Preview (Rapid Generation)',
+    description: 'Fast preview model for rapid drafting',
+    fallback: 'gemini-3.1-flash-lite'
   }
 ];
 
@@ -233,7 +227,7 @@ export async function callGemini({
         'Content-Type': 'application/json'
       },
       body: JSON.stringify(bodyPayload),
-      signal: AbortSignal.timeout(90000)
+      signal: AbortSignal.timeout(8000)
     });
 
     if (!response.ok) {
@@ -251,11 +245,12 @@ export async function callGemini({
     return text;
   }
 
-  // Build candidate fallback models list with ultra-stable gemini-2.5-flash
+  // Build candidate fallback models list with verified ultra-fast models
   const fallbackChain = [
     activeModel,
-    'gemini-2.5-flash',
+    'gemini-3.1-flash-lite',
     'gemini-3.5-flash',
+    'gemini-3-flash-preview',
     'gemini-3.6-flash'
   ].filter(Boolean).filter((v, i, a) => a.indexOf(v) === i);
 

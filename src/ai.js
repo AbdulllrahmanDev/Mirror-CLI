@@ -77,11 +77,73 @@ export const GEMINI_MODELS = [
 
 const CONFIG_PATH = path.join(os.homedir(), '.mirror-ai-config.json');
 
+// Provider Presets & Templates for Quick Setup
+export const PROVIDER_TEMPLATES = [
+  {
+    id: 'deepseek',
+    name: 'DeepSeek AI',
+    baseUrl: 'https://api.deepseek.com/v1',
+    defaultModel: 'deepseek-chat',
+    keyPlaceholder: 'sk-...'
+  },
+  {
+    id: 'openrouter',
+    name: 'OpenRouter (Multi-Model Gateway)',
+    baseUrl: 'https://openrouter.ai/api/v1',
+    defaultModel: 'anthropic/claude-3.5-sonnet',
+    keyPlaceholder: 'sk-or-v1-...'
+  },
+  {
+    id: 'groq',
+    name: 'Groq Cloud (Ultra-Fast LPU)',
+    baseUrl: 'https://api.groq.com/openai/v1',
+    defaultModel: 'llama-3.3-70b-versatile',
+    keyPlaceholder: 'gsk_...'
+  },
+  {
+    id: 'openai',
+    name: 'OpenAI (GPT-4o / o3-mini)',
+    baseUrl: 'https://api.openai.com/v1',
+    defaultModel: 'gpt-4o',
+    keyPlaceholder: 'sk-proj-...'
+  },
+  {
+    id: 'together',
+    name: 'Together AI',
+    baseUrl: 'https://api.together.xyz/v1',
+    defaultModel: 'meta-llama/Llama-3.3-70B-Instruct-Turbo',
+    keyPlaceholder: '...'
+  },
+  {
+    id: 'mistral',
+    name: 'Mistral AI',
+    baseUrl: 'https://api.mistral.ai/v1',
+    defaultModel: 'mistral-large-latest',
+    keyPlaceholder: '...'
+  },
+  {
+    id: 'ollama',
+    name: 'Ollama (Localhost LLM)',
+    baseUrl: 'http://localhost:11434/v1',
+    defaultModel: 'llama3.2',
+    keyPlaceholder: 'ollama (optional)'
+  },
+  {
+    id: 'custom',
+    name: 'Custom Provider (Any OpenAI-Compatible Endpoint)',
+    baseUrl: 'https://your-api-endpoint.com/v1',
+    defaultModel: 'custom-model-id',
+    keyPlaceholder: 'Your API Key'
+  }
+];
+
 /**
  * Load AI Configuration
  */
 export function loadAIConfig() {
   const defaultConfig = {
+    activeProvider: 'gemini', // 'gemini' | customProviderId
+    customProviders: [],
     apiKey: process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || '',
     powerLevel: 'high',
     model: 'gemini-3.7-flash',
@@ -113,43 +175,105 @@ export function saveAIConfig(config) {
 }
 
 /**
- * Ensure an API key is available, prompting the user if missing
+ * Resolves active provider metadata & details
+ */
+export function getActiveProviderDetails(config = loadAIConfig()) {
+  const activeId = config.activeProvider || 'gemini';
+  if (activeId === 'gemini') {
+    return {
+      id: 'gemini',
+      name: 'Google Gemini',
+      type: 'gemini',
+      model: config.model || 'gemini-3.7-flash',
+      baseUrl: 'Google AI Studio API',
+      apiKey: config.apiKey || '',
+      hasKey: Boolean(config.apiKey && config.apiKey.trim())
+    };
+  }
+
+  const custom = (config.customProviders || []).find(p => p.id === activeId);
+  if (custom) {
+    return {
+      id: custom.id,
+      name: custom.name,
+      type: 'openai-compatible',
+      model: custom.model,
+      baseUrl: custom.baseUrl,
+      apiKey: custom.apiKey || '',
+      hasKey: Boolean(custom.apiKey && custom.apiKey.trim())
+    };
+  }
+
+  // Fallback to Gemini if custom provider was deleted
+  return {
+    id: 'gemini',
+    name: 'Google Gemini',
+    type: 'gemini',
+    model: config.model || 'gemini-3.7-flash',
+    baseUrl: 'Google AI Studio API',
+    apiKey: config.apiKey || '',
+    hasKey: Boolean(config.apiKey && config.apiKey.trim())
+  };
+}
+
+/**
+ * Ensure an API key is available for active provider
  */
 export async function ensureApiKey(theme = getTheme()) {
   let config = loadAIConfig();
-  if (config.apiKey && config.apiKey.trim().length > 0) {
-    return config.apiKey.trim();
+  const provider = getActiveProviderDetails(config);
+
+  if (provider.apiKey && provider.apiKey.trim().length > 0) {
+    return provider.apiKey.trim();
   }
 
-  console.log('\n' + boxen(
-    theme.chalkPrimary.bold('[ Google Gemini API Key Required ]\n\n') +
-    chalk.white('To use AI capabilities, please enter your Google Gemini API Key.\n') +
-    theme.chalkAccent('• Get a FREE API key here: ') + chalk.underline('https://aistudio.google.com/app/apikey') + '\n' +
-    theme.chalkMuted('• Your key will be securely saved locally in ~/.mirror-ai-config.json'),
-    {
-      padding: 1,
-      borderStyle: theme.borderStyle,
-      borderColor: theme.primaryHex,
-      title: ' [ AI Configuration ] ',
-      titleAlignment: 'left'
+  if (provider.id === 'gemini') {
+    console.log('\n' + boxen(
+      theme.chalkPrimary.bold('[ Google Gemini API Key Required ]\n\n') +
+      chalk.white('To use AI capabilities, please enter your Google Gemini API Key.\n') +
+      theme.chalkAccent('• Get a FREE API key here: ') + chalk.underline('https://aistudio.google.com/app/apikey') + '\n' +
+      theme.chalkMuted('• Your key will be securely saved locally in ~/.mirror-ai-config.json'),
+      {
+        padding: 1,
+        borderStyle: theme.borderStyle,
+        borderColor: theme.primaryHex,
+        title: ' [ AI Configuration ] ',
+        titleAlignment: 'left'
+      }
+    ));
+
+    const key = await password({
+      message: theme.chalkPrimary('Enter your Gemini API Key:'),
+      mask: '*'
+    });
+
+    if (!key || !key.trim()) {
+      throw new Error('Gemini API Key is required.');
     }
-  ));
 
-  console.log(theme.chalkMuted('  Tip: Paste your key using Ctrl+V or Right-Click, then press Enter.\n'));
+    config.apiKey = key.trim();
+    saveAIConfig(config);
+    console.log(theme.chalkSecondary('\n  ✔ Gemini API Key saved successfully!\n'));
+    return config.apiKey;
+  } else {
+    // Custom Provider Key
+    const key = await password({
+      message: theme.chalkPrimary(`Enter API Key for [${provider.name}]:`),
+      mask: '*'
+    });
 
-  const key = await password({
-    message: theme.chalkPrimary('Enter your Gemini API Key:'),
-    mask: '*'
-  });
+    if (!key || !key.trim()) {
+      throw new Error(`API Key is required for provider ${provider.name}.`);
+    }
 
-  if (!key || !key.trim()) {
-    throw new Error('Gemini API Key is required to use AI features.');
+    const idx = (config.customProviders || []).findIndex(p => p.id === provider.id);
+    if (idx !== -1) {
+      config.customProviders[idx].apiKey = key.trim();
+      saveAIConfig(config);
+    }
+    console.log(theme.chalkSecondary(`\n  ✔ API Key saved for ${provider.name}!\n`));
+    return key.trim();
   }
-
-  config.apiKey = key.trim();
-  saveAIConfig(config);
-  console.log(theme.chalkSecondary('\n  ✔ Gemini API Key saved successfully!\n'));
-  return config.apiKey;
 }
 
 /**
@@ -181,17 +305,69 @@ export function cleanHtmlForAI(html) {
 }
 
 /**
- * Direct Gemini API Caller with Fallback and Retry
+ * Universal Multi-Provider AI Caller (Supports Gemini & OpenAI-Compatible Custom APIs)
  */
-export async function callGemini({
+export async function callAI({
   prompt,
   systemInstruction = 'You are an expert AI Frontend Engineer & Web Architect inside Mirror CLI.',
   model = null,
   apiKey = null,
   temperature = 0.2,
-  maxOutputTokens = 8192
+  maxOutputTokens = 8192,
+  providerId = null
 }) {
   const config = loadAIConfig();
+  const currentProviderId = providerId || config.activeProvider || 'gemini';
+
+  // 1. OpenAI-Compatible Custom Provider Handler
+  if (currentProviderId !== 'gemini') {
+    const custom = (config.customProviders || []).find(p => p.id === currentProviderId);
+    if (!custom) {
+      throw new Error(`Custom provider '${currentProviderId}' not found. Please re-select a provider.`);
+    }
+
+    const activeKey = apiKey || custom.apiKey;
+    const activeModel = model || custom.model;
+    const rawBaseUrl = (custom.baseUrl || 'https://api.openai.com/v1').replace(/\/+$/, '');
+    const endpoint = rawBaseUrl.endsWith('/chat/completions') ? rawBaseUrl : `${rawBaseUrl}/chat/completions`;
+
+    if (!activeKey) {
+      throw new Error(`Missing API Key for custom provider '${custom.name}'.`);
+    }
+
+    const messages = [];
+    if (systemInstruction) {
+      messages.push({ role: 'system', content: systemInstruction });
+    }
+    messages.push({ role: 'user', content: prompt });
+
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${activeKey}`
+      },
+      body: JSON.stringify({
+        model: activeModel,
+        messages,
+        temperature,
+        max_tokens: maxOutputTokens
+      }),
+      signal: AbortSignal.timeout(45000)
+    });
+
+    if (!response.ok) {
+      const errData = await response.json().catch(() => ({}));
+      const errorMsg = errData?.error?.message || errData?.message || `HTTP ${response.status} ${response.statusText}`;
+      throw new Error(`[${custom.name}] ${errorMsg}`);
+    }
+
+    const data = await response.json();
+    const reply = data?.choices?.[0]?.message?.content || '';
+    return reply;
+  }
+
+  // 2. Google Gemini API Handler
   const activeKey = apiKey || config.apiKey;
   const activeModel = model || config.model || 'gemini-3.7-flash';
 
@@ -287,6 +463,9 @@ export async function callGemini({
 
   throw lastError || new Error('All candidate Gemini models failed to respond.');
 }
+
+// Backward compatibility export
+export const callGemini = callAI;
 
 /**
  * 1. AI Auto-Supervisor & Code Healer
@@ -828,36 +1007,41 @@ Return a valid JSON object containing:
 
 
 /**
- * 6. Test Connection to Gemini API
+ * Test Connection to Active AI Provider
  */
-export async function testGeminiConnection() {
+export async function testAIConnection() {
   const theme = getTheme();
   renderHeader();
-  console.log(theme.chalkPrimary.bold('\n[ Testing Google Gemini API Connection ]\n'));
-
   const config = loadAIConfig();
+  const provider = getActiveProviderDetails(config);
+
+  console.log(theme.chalkPrimary.bold(`\n[ Testing Connection to ${provider.name} ]\n`));
+
   const apiKey = await ensureApiKey(theme);
 
   const spinner = ora({
-    text: `Pinging Gemini API with model (${theme.chalkAccent(config.model)})...`,
+    text: `Pinging ${theme.chalkAccent(provider.name)} with model (${chalk.bold(provider.model)})...`,
     color: 'cyan'
   }).start();
 
   const startTime = Date.now();
   try {
-    const response = await callGemini({
+    const response = await callAI({
       prompt: 'Respond in exactly one short sentence confirming you are online as Mirror CLI AI Engine.',
       apiKey,
-      model: config.model
+      model: provider.model,
+      providerId: provider.id
     });
 
     const latency = Date.now() - startTime;
     spinner.succeed(`Connected successfully! Latency: ${latency}ms`);
 
     console.log('\n' + boxen(
-      `${theme.chalkSecondary('Active Model:')} ${chalk.white(config.model)}\n` +
-      `${theme.chalkSecondary('Status:')}       ${chalk.green('● ONLINE & READY')}\n` +
-      `${theme.chalkSecondary('Response:')}     ${chalk.italic('"' + response.trim() + '"')}`,
+      `${theme.chalkSecondary('Active Provider:')} ${chalk.green.bold(provider.name)}\n` +
+      `${theme.chalkSecondary('Active Model:')}    ${chalk.white(provider.model)}\n` +
+      `${theme.chalkSecondary('Endpoint URL:')}    ${chalk.dim(provider.baseUrl)}\n` +
+      `${theme.chalkSecondary('Status:')}          ${chalk.green('● ONLINE & READY')}\n` +
+      `${theme.chalkSecondary('Response:')}        ${chalk.italic('"' + response.trim() + '"')}`,
       {
         padding: 1,
         borderStyle: 'round',
@@ -872,20 +1056,399 @@ export async function testGeminiConnection() {
   await input({ message: theme.chalkPrimary('↵ Press [ENTER] to continue') });
 }
 
-
+// Backward compatibility alias
+export const testGeminiConnection = testAIConnection;
 
 /**
- * Interactive Live Chat Session with Gemini in CLI
+ * Add New Custom AI Provider / API Wizard
+ */
+export async function promptAddCustomProvider(theme = getTheme()) {
+  renderHeader();
+  console.log(theme.chalkPrimary.bold('\n[ Add New Custom AI Provider & API ]\n'));
+  console.log(theme.chalkMuted('  Connect to DeepSeek, OpenRouter, Groq, OpenAI, Mistral, Ollama, or any custom API.\n'));
+
+  const templateChoices = PROVIDER_TEMPLATES.map(t => ({
+    name: `[+] ${t.name}`,
+    value: t.id,
+    description: t.baseUrl ? `Default Endpoint: ${t.baseUrl}` : 'Configure custom endpoint from scratch'
+  }));
+  templateChoices.push({ name: '< Cancel & Return', value: 'cancel' });
+
+  const selectedTemplateId = await select({
+    message: theme.chalkPrimary.bold('Select Provider Template:'),
+    choices: templateChoices
+  });
+
+  if (selectedTemplateId === 'cancel') return;
+
+  const template = PROVIDER_TEMPLATES.find(t => t.id === selectedTemplateId) || PROVIDER_TEMPLATES[PROVIDER_TEMPLATES.length - 1];
+
+  const providerName = await input({
+    message: theme.chalkPrimary('Enter Provider Name / Label:'),
+    default: template.name.split(' (')[0],
+    validate: (val) => val.trim() ? true : 'Provider name cannot be empty.'
+  });
+
+  const baseUrl = await input({
+    message: theme.chalkPrimary('Enter API Base URL (OpenAI-Compatible endpoint):'),
+    default: template.baseUrl || 'https://api.openai.com/v1',
+    validate: (val) => {
+      try {
+        new URL(val.trim());
+        return true;
+      } catch {
+        return 'Please enter a valid HTTP/HTTPS base URL.';
+      }
+    }
+  });
+
+  const modelName = await input({
+    message: theme.chalkPrimary('Enter Target Model Identifier:'),
+    default: template.defaultModel || 'gpt-4o',
+    validate: (val) => val.trim() ? true : 'Model identifier cannot be empty.'
+  });
+
+  console.log(theme.chalkMuted('\n  Tip: Paste your API key using Ctrl+V or Right-Click, then press Enter.'));
+  const apiKey = await password({
+    message: theme.chalkPrimary(`Enter API Key for [${providerName}]:`),
+    mask: '*'
+  });
+
+  const providerId = `custom_${Date.now()}`;
+  const newProvider = {
+    id: providerId,
+    name: providerName.trim(),
+    baseUrl: baseUrl.trim().replace(/\/+$/, ''),
+    model: modelName.trim(),
+    apiKey: apiKey.trim(),
+    createdAt: new Date().toISOString()
+  };
+
+  // Test connection
+  const testSpin = ora(`Testing connection to ${providerName} (${newProvider.model})...`).start();
+  try {
+    const reply = await callAI({
+      prompt: 'Say hello in one word.',
+      apiKey: newProvider.apiKey,
+      model: newProvider.model,
+      providerId: newProvider.id
+    });
+    testSpin.succeed(`Connection verified! Response: "${reply.trim().slice(0, 30)}"`);
+  } catch (err) {
+    testSpin.warn(`Verification notice: ${err.message}`);
+  }
+
+  const config = loadAIConfig();
+  if (!config.customProviders) config.customProviders = [];
+  config.customProviders.push(newProvider);
+  config.activeProvider = providerId;
+  saveAIConfig(config);
+
+  console.log(
+    boxen(
+      `${chalk.green.bold('✔ Custom Provider Successfully Added & Activated!')}\n\n` +
+      `${theme.chalkSecondary('Provider Name:')}  ${chalk.white.bold(newProvider.name)}\n` +
+      `${theme.chalkSecondary('Base URL:')}       ${chalk.dim(newProvider.baseUrl)}\n` +
+      `${theme.chalkSecondary('Model ID:')}       ${chalk.cyan(newProvider.model)}\n` +
+      `${theme.chalkSecondary('Status:')}         ${chalk.green('Active Provider')}`,
+      {
+        padding: 1,
+        borderStyle: 'round',
+        borderColor: 'green'
+      }
+    )
+  );
+
+  await input({ message: theme.chalkPrimary('\n↵ Press [ENTER] to continue') });
+}
+
+/**
+ * Switch Active Provider Menu
+ */
+export async function promptSwitchProvider(theme = getTheme()) {
+  renderHeader();
+  const config = loadAIConfig();
+  const activeId = config.activeProvider || 'gemini';
+
+  const choices = [
+    {
+      name: `[★] Google Gemini (${config.model || 'gemini-3.7-flash'}) ${activeId === 'gemini' ? chalk.green('✔ (Active)') : ''}`,
+      value: 'gemini',
+      description: 'Official Google AI Studio API (Gemini 3.7 / 3.6 / 3.5 Flash & 3.1 Pro)'
+    }
+  ];
+
+  (config.customProviders || []).forEach(p => {
+    choices.push({
+      name: `[★] ${p.name} (${p.model}) ${activeId === p.id ? chalk.green('✔ (Active)') : ''}`,
+      value: p.id,
+      description: `Endpoint: ${p.baseUrl}`
+    });
+  });
+
+  choices.push({
+    name: '[+] Add New Custom Provider / API...',
+    value: '__add__'
+  });
+  choices.push({ name: '< Cancel & Return', value: '__cancel__' });
+
+  const selected = await select({
+    message: theme.chalkPrimary.bold('Select Active AI Provider & Model:'),
+    choices
+  });
+
+  if (selected === '__cancel__') return;
+  if (selected === '__add__') {
+    await promptAddCustomProvider(theme);
+    return;
+  }
+
+  config.activeProvider = selected;
+  saveAIConfig(config);
+
+  const currentDetails = getActiveProviderDetails(config);
+  console.log(theme.chalkPrimary.bold(`\n  ✔ Active provider changed to: ${currentDetails.name} (${currentDetails.model})\n`));
+  await new Promise(r => setTimeout(r, 1000));
+}
+
+/**
+ * Manage / Edit / Delete Custom Providers
+ */
+export async function promptManageCustomProviders(theme = getTheme()) {
+  while (true) {
+    renderHeader();
+    const config = loadAIConfig();
+    const customList = config.customProviders || [];
+
+    if (customList.length === 0) {
+      console.log(
+        boxen(
+          theme.chalkMuted('No custom providers added yet.\n\nUse "[+] Add New Custom Provider" to add DeepSeek, OpenRouter, Groq, OpenAI, etc.'),
+          {
+            padding: 1,
+            borderStyle: 'round',
+            borderColor: theme.secondaryHex,
+            title: theme.chalkPrimary.bold(' [ Custom AI Providers ] ')
+          }
+        )
+      );
+
+      const act = await select({
+        message: theme.chalkPrimary('Select an option:'),
+        choices: [
+          { name: '[+] Add New Custom Provider', value: 'add' },
+          { name: '< Back to AI Menu', value: 'back' }
+        ]
+      });
+
+      if (act === 'add') {
+        await promptAddCustomProvider(theme);
+      } else {
+        return;
+      }
+      continue;
+    }
+
+    const providerChoices = customList.map((p, idx) => ({
+      name: `[${idx + 1}] ${p.name} (${p.model}) ${config.activeProvider === p.id ? chalk.green('✔ (Active)') : ''}`,
+      value: p.id,
+      description: `URL: ${p.baseUrl}`
+    }));
+    providerChoices.push({ name: '[+] Add Another Provider', value: '__add__' });
+    providerChoices.push({ name: '< Back to AI Menu', value: '__back__' });
+
+    const selectedId = await select({
+      message: theme.chalkPrimary.bold('Select a custom provider to manage:'),
+      choices: providerChoices
+    });
+
+    if (selectedId === '__back__') return;
+    if (selectedId === '__add__') {
+      await promptAddCustomProvider(theme);
+      continue;
+    }
+
+    const targetProvider = customList.find(p => p.id === selectedId);
+    if (!targetProvider) continue;
+
+    const action = await select({
+      message: theme.chalkPrimary.bold(`Manage [${targetProvider.name}]:`),
+      choices: [
+        { name: `[★] Set as Active Provider ${config.activeProvider === targetProvider.id ? '(Already Active)' : ''}`, value: 'activate' },
+        { name: '[⚡] Test Connection (Ping)', value: 'test' },
+        { name: '[✏] Edit Model Identifier', value: 'edit_model' },
+        { name: '[✏] Edit Base URL', value: 'edit_url' },
+        { name: '[🔑] Update API Key', value: 'edit_key' },
+        { name: '[x] Delete Provider', value: 'delete' },
+        { name: '< Back to Providers List', value: 'back' }
+      ]
+    });
+
+    if (action === 'activate') {
+      config.activeProvider = targetProvider.id;
+      saveAIConfig(config);
+      console.log(theme.chalkPrimary.bold(`\n  ✔ Activated ${targetProvider.name}!\n`));
+      await new Promise(r => setTimeout(r, 800));
+    } else if (action === 'test') {
+      const spin = ora(`Testing ${targetProvider.name}...`).start();
+      try {
+        const reply = await callAI({
+          prompt: 'Respond with a short confirmation message.',
+          apiKey: targetProvider.apiKey,
+          model: targetProvider.model,
+          providerId: targetProvider.id
+        });
+        spin.succeed(`Connected to ${targetProvider.name}! Response: "${reply.trim()}"`);
+      } catch (err) {
+        spin.fail(`Error: ${err.message}`);
+      }
+      await input({ message: theme.chalkPrimary('\n↵ Press [ENTER] to continue') });
+    } else if (action === 'edit_model') {
+      const newModel = await input({
+        message: theme.chalkPrimary('Enter new Model Identifier:'),
+        default: targetProvider.model
+      });
+      if (newModel.trim()) {
+        targetProvider.model = newModel.trim();
+        saveAIConfig(config);
+        console.log(theme.chalkPrimary.bold('\n  ✔ Model updated!\n'));
+        await new Promise(r => setTimeout(r, 800));
+      }
+    } else if (action === 'edit_url') {
+      const newUrl = await input({
+        message: theme.chalkPrimary('Enter new API Base URL:'),
+        default: targetProvider.baseUrl
+      });
+      if (newUrl.trim()) {
+        targetProvider.baseUrl = newUrl.trim().replace(/\/+$/, '');
+        saveAIConfig(config);
+        console.log(theme.chalkPrimary.bold('\n  ✔ Base URL updated!\n'));
+        await new Promise(r => setTimeout(r, 800));
+      }
+    } else if (action === 'edit_key') {
+      const newKey = await password({
+        message: theme.chalkPrimary(`Enter new API Key for [${targetProvider.name}]:`),
+        mask: '*'
+      });
+      if (newKey.trim()) {
+        targetProvider.apiKey = newKey.trim();
+        saveAIConfig(config);
+        console.log(theme.chalkPrimary.bold('\n  ✔ API Key updated!\n'));
+        await new Promise(r => setTimeout(r, 800));
+      }
+    } else if (action === 'delete') {
+      const confirmDelete = await confirm({
+        message: `Are you sure you want to delete ${targetProvider.name}?`,
+        default: false
+      });
+      if (confirmDelete) {
+        config.customProviders = config.customProviders.filter(p => p.id !== targetProvider.id);
+        if (config.activeProvider === targetProvider.id) {
+          config.activeProvider = 'gemini';
+        }
+        saveAIConfig(config);
+        console.log(theme.chalkPrimary.bold(`\n  ✔ Deleted ${targetProvider.name}. Active provider defaulted to Google Gemini.\n`));
+        await new Promise(r => setTimeout(r, 1000));
+      }
+    }
+  }
+}
+
+/**
+ * Configure Google Gemini (API Key & Model Selection)
+ */
+export async function promptConfigureGemini(theme = getTheme()) {
+  renderHeader();
+  const config = loadAIConfig();
+  const isStandardModel = GEMINI_MODELS.some(m => m.id === config.model);
+
+  console.log(
+    boxen(
+      `${theme.chalkPrimary.bold('Google Gemini Configuration')}\n\n` +
+      `${theme.chalkSecondary('Current Gemini Model:')}  ${theme.chalkAccent.bold(config.model)}\n` +
+      `${theme.chalkSecondary('API Key Status:')}        ${config.apiKey ? chalk.green('● Configured') : chalk.red('○ Missing')}`,
+      {
+        padding: 1,
+        borderStyle: 'round',
+        borderColor: theme.secondaryHex,
+        title: theme.chalkPrimary.bold(' [ Gemini Settings ] ')
+      }
+    )
+  );
+
+  const act = await select({
+    message: theme.chalkPrimary.bold('Gemini Options:'),
+    choices: [
+      { name: '[1] Select Gemini Model (3.7 Flash, 3.6 Flash, 3.5 Flash, 3.1 Flash Lite...)', value: 'model' },
+      { name: '[2] Update Google Gemini API Key', value: 'key' },
+      { name: '< Back to AI Menu', value: 'back' }
+    ]
+  });
+
+  if (act === 'key') {
+    console.log(theme.chalkMuted('\n  Tip: Paste your key using Ctrl+V or Right-Click, then press Enter.'));
+    const newKey = await password({
+      message: theme.chalkPrimary('Enter Google Gemini API Key:'),
+      mask: '*'
+    });
+    if (newKey.trim()) {
+      config.apiKey = newKey.trim();
+      saveAIConfig(config);
+      console.log(theme.chalkPrimary.bold('\n  ✔ Gemini API Key saved successfully!\n'));
+      await new Promise(r => setTimeout(r, 1000));
+    }
+  } else if (act === 'model') {
+    const modelChoices = GEMINI_MODELS.map(m => ({
+      name: `${m.name} ${m.id === config.model ? '✔ (Active)' : ''}`,
+      value: m.id,
+      description: m.description
+    }));
+
+    const customActiveText = !isStandardModel ? ` (${config.model}) ✔ (Active)` : '';
+    modelChoices.push({
+      name: `[+] Custom Model ID (Enter manually)${customActiveText}`,
+      value: 'custom',
+      description: 'Input any Google Generative AI model name (e.g. gemma-4-26b-a4b-it, fine-tuned model, etc.)'
+    });
+
+    const selectedModel = await select({
+      message: theme.chalkPrimary.bold('Choose Gemini Model:'),
+      choices: modelChoices
+    });
+
+    if (selectedModel === 'custom') {
+      const customId = await input({
+        message: theme.chalkPrimary('Enter custom model identifier:'),
+        default: !isStandardModel ? config.model : '',
+        validate: (val) => val.trim() ? true : 'Model identifier cannot be empty.'
+      });
+      if (customId.trim()) {
+        config.model = customId.trim().replace(/^models\//, '');
+        saveAIConfig(config);
+      }
+    } else {
+      config.model = selectedModel;
+      saveAIConfig(config);
+    }
+    console.log(theme.chalkPrimary.bold(`\n  ✔ Active Gemini model set to: ${config.model}\n`));
+    await new Promise(r => setTimeout(r, 1000));
+  }
+}
+
+/**
+ * Interactive Live Chat Session with Active AI Provider in CLI
  */
 export async function runAIChatSession() {
   const theme = getTheme();
   renderHeader();
-  console.log(theme.chalkPrimary.bold('\n[ Interactive Gemini AI Terminal Chat & Assistant ]\n'));
-  console.log(theme.chalkMuted('  Chat live with Gemini directly in your terminal. Type "exit" or "quit" to end chat.\n'));
+  const config = loadAIConfig();
+  const provider = getActiveProviderDetails(config);
+
+  console.log(theme.chalkPrimary.bold(`\n[ Interactive AI Terminal Assistant & Chat — ${provider.name} ]\n`));
+  console.log(theme.chalkMuted('  Chat live with your active AI provider directly in your terminal. Type "exit" or "quit" to end chat.\n'));
 
   const apiKey = await ensureApiKey(theme);
-  const config = loadAIConfig();
-  console.log(theme.chalkSecondary(`  Active Model: ${chalk.bold(config.model)} | Power Level: ${chalk.bold(config.powerLevel)}\n`));
+  console.log(theme.chalkSecondary(`  Active Provider: ${chalk.green.bold(provider.name)} | Model: ${chalk.bold(provider.model)}\n`));
 
   const conversationHistory = [];
 
@@ -902,7 +1465,7 @@ export async function runAIChatSession() {
         break;
       }
 
-      const spinner = ora('Gemini is thinking...').start();
+      const spinner = ora(`${provider.name} is thinking...`).start();
       conversationHistory.push({ role: 'user', content: userMessage.trim() });
 
       // Build context prompt from conversation history
@@ -911,11 +1474,12 @@ export async function runAIChatSession() {
         .map(m => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`)
         .join('\n\n');
 
-      const reply = await callGemini({
+      const reply = await callAI({
         prompt: promptText,
         systemInstruction: 'You are an intelligent, helpful AI assistant built into Mirror CLI. You assist with web development, architecture, JavaScript, CSS styling, responsive layout, animations, design systems, and any questions. Keep answers clear, concise, and helpful.',
-        model: config.model,
-        apiKey
+        model: provider.model,
+        apiKey,
+        providerId: provider.id
       });
 
       spinner.stop();
@@ -927,7 +1491,7 @@ export async function runAIChatSession() {
           margin: { top: 0, bottom: 1 },
           borderStyle: 'round',
           borderColor: theme.secondaryHex,
-          title: theme.chalkPrimary.bold(` [ Gemini AI (${config.model}) ] `),
+          title: theme.chalkPrimary.bold(` [ ${provider.name} (${provider.model}) ] `),
           titleAlignment: 'left'
         })
       );
@@ -942,7 +1506,7 @@ export async function runAIChatSession() {
 }
 
 /**
- * Main AI Settings, Diagnostics & Chat Hub
+ * Main AI Multi-Provider Control Hub
  */
 export async function runAIMenu() {
   let inAIMenu = true;
@@ -951,21 +1515,24 @@ export async function runAIMenu() {
   while (inAIMenu) {
     renderHeader();
     const config = loadAIConfig();
+    const provider = getActiveProviderDetails(config);
     const activePowerDef = AI_POWER_LEVELS[config.powerLevel] || AI_POWER_LEVELS.high;
+    const totalProviders = 1 + (config.customProviders || []).length;
 
     console.log(
       boxen(
-        `${theme.chalkPrimary.bold('Mirror CLI — AI Settings, Diagnostics & Chat')}\n` +
-        `${theme.chalkMuted('Manage Gemini API Key, Model Selection, Power Level, Diagnostics & Terminal Chat')}\n\n` +
-        `${theme.chalkSecondary('Active Model:')}    ${theme.chalkAccent.bold(config.model)}\n` +
-        `${theme.chalkSecondary('Power Level:')}     ${theme.chalkAccent.bold(activePowerDef.name)}\n` +
-        `${theme.chalkSecondary('API Key Status:')}  ${config.apiKey ? chalk.green('● Configured & Ready') : chalk.red('○ Missing API Key')}`,
+        `${theme.chalkPrimary.bold('Mirror CLI — Universal AI Studio & Engine')}\n` +
+        `${theme.chalkMuted('Support for Google Gemini, DeepSeek, OpenAI, Groq, OpenRouter & Custom APIs')}\n\n` +
+        `${theme.chalkSecondary('Active Provider:')}  ${chalk.green.bold(provider.name)}\n` +
+        `${theme.chalkSecondary('Active Model:')}     ${theme.chalkAccent.bold(provider.model)}\n` +
+        `${theme.chalkSecondary('API Key Status:')}   ${provider.hasKey ? chalk.green('● Configured & Ready') : chalk.red('○ Missing API Key')}\n` +
+        `${theme.chalkSecondary('Total Providers:')}  ${chalk.white(totalProviders)} saved`,
         {
           padding: 1,
           borderStyle: theme.borderStyle,
           borderColor: theme.primaryHex,
           textAlignment: 'center',
-          title: theme.chalkPrimary.bold(' [ AI Control Hub ] '),
+          title: theme.chalkPrimary.bold(' [ AI Multi-Provider Control Hub ] '),
           titleAlignment: 'left'
         }
       )
@@ -975,65 +1542,26 @@ export async function runAIMenu() {
       const choice = await select({
         message: theme.chalkPrimary.bold('AI Control Hub — Select an option (Press [ESC] to return):'),
         choices: [
-          { name: '[1] Configure / Change Gemini API Key', value: 'key' },
-          { name: '[2] Select AI Model (3.7 Flash, 3.6 Flash, 3.5 Flash, 3.1 Pro, Custom)', value: 'model' },
-          { name: '[3] Select AI Power Level (High Reasoning / Balanced / Fast)', value: 'power' },
-          { name: '[4] Test Gemini API Connection (Ping & Diagnostics)', value: 'test' },
-          { name: '[5] Interactive AI Chat & Assistant (Chat with Gemini in CLI)', value: 'chat' },
-          { name: '[6] Adjust Temperature & Creativity Settings', value: 'temp' },
+          { name: `[1] Switch Active Provider & Model (Current: ${provider.name})`, value: 'switch' },
+          { name: '[+] Add New Custom Provider / API (DeepSeek, OpenAI, Groq, OpenRouter...)', value: 'add' },
+          { name: '[⚙] Manage / Edit / Delete Custom Providers', value: 'manage' },
+          { name: '[G] Configure Google Gemini (API Key & Model Selection)', value: 'gemini' },
+          { name: '[⚡] Select AI Power Level (High / Balanced / Fast)', value: 'power' },
+          { name: '[✓] Test Active Connection (Ping & Diagnostics)', value: 'test' },
+          { name: '[💬] Interactive AI Chat & Assistant (Chat in CLI)', value: 'chat' },
+          { name: '[T] Adjust Temperature & Creativity Settings', value: 'temp' },
           { name: '[<] Back to Main Menu', value: 'back' }
         ]
       });
 
-      if (choice === 'key') {
-        console.log(theme.chalkMuted('\n  Tip: Paste your key using Ctrl+V or Right-Click, then press Enter.'));
-        const newKey = await password({
-          message: theme.chalkPrimary('Enter Google Gemini API Key:'),
-          mask: '*'
-        });
-        if (newKey.trim()) {
-          config.apiKey = newKey.trim();
-          saveAIConfig(config);
-          console.log(theme.chalkPrimary.bold('\n  ✔ Gemini API Key saved successfully!\n'));
-          await new Promise(r => setTimeout(r, 1200));
-        }
-      } else if (choice === 'model') {
-        const isStandardModel = GEMINI_MODELS.some(m => m.id === config.model);
-        const modelChoices = GEMINI_MODELS.map(m => ({
-          name: `${m.name} ${m.id === config.model ? '✔ (Active)' : ''}`,
-          value: m.id,
-          description: m.description
-        }));
-        
-        const customActiveText = !isStandardModel ? ` (${config.model}) ✔ (Active)` : '';
-        modelChoices.push({
-          name: `[+] Custom Model ID (Enter manually)${customActiveText}`,
-          value: 'custom',
-          description: 'Input any Google Generative AI model name (e.g. gemma-4-26b-a4b-it, fine-tuned model, etc.)'
-        });
-
-        const selectedModel = await select({
-          message: theme.chalkPrimary.bold('Choose Gemini Model:'),
-          choices: modelChoices
-        });
-
-        if (selectedModel === 'custom') {
-          const customId = await input({
-            message: theme.chalkPrimary('Enter custom model identifier (e.g. gemma-4-26b-a4b-it or custom ID):'),
-            default: !isStandardModel ? config.model : '',
-            validate: (val) => val.trim() ? true : 'Model identifier cannot be empty.'
-          });
-          if (customId.trim()) {
-            const cleanedId = customId.trim().replace(/^models\//, '');
-            config.model = cleanedId;
-            saveAIConfig(config);
-          }
-        } else {
-          config.model = selectedModel;
-          saveAIConfig(config);
-        }
-        console.log(theme.chalkPrimary.bold(`\n  ✔ Active model set to: ${config.model}\n`));
-        await new Promise(r => setTimeout(r, 1000));
+      if (choice === 'switch') {
+        await promptSwitchProvider(theme);
+      } else if (choice === 'add') {
+        await promptAddCustomProvider(theme);
+      } else if (choice === 'manage') {
+        await promptManageCustomProviders(theme);
+      } else if (choice === 'gemini') {
+        await promptConfigureGemini(theme);
       } else if (choice === 'power') {
         const powerChoices = Object.keys(AI_POWER_LEVELS).map(k => {
           const p = AI_POWER_LEVELS[k];
@@ -1058,7 +1586,7 @@ export async function runAIMenu() {
         console.log(theme.chalkPrimary.bold(`\n  ✔ AI Power Level updated to: ${preset.name}\n`));
         await new Promise(r => setTimeout(r, 1000));
       } else if (choice === 'test') {
-        await testGeminiConnection();
+        await testAIConnection();
       } else if (choice === 'chat') {
         await runAIChatSession();
       } else if (choice === 'temp') {

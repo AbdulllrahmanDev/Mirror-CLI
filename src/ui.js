@@ -336,12 +336,18 @@ export async function runInteractiveWizard(advanced = false) {
       });
     }
 
+    const enableAI = await confirm({
+      message: 'Enable Gemini AI to supervise, fix code errors & heal the website after download?',
+      default: true
+    });
+
     return {
       url: formattedUrl,
       outputDir,
       maxDepth,
       skipZip: !createZip,
-      verbose
+      verbose,
+      useAI: enableAI
     };
   } catch (err) {
     if (err.name === 'ExitPromptError') {
@@ -352,15 +358,16 @@ export async function runInteractiveWizard(advanced = false) {
   }
 }
 
-export function renderConfigSummary({ url, outPath, maxDepth, skipZip, verbose }) {
+export function renderConfigSummary({ url, outPath, maxDepth, skipZip, verbose, useAI = true }) {
   const theme = getTheme();
   const content = 
-    `${theme.chalkPrimary.bold('Target URL:')}    ${chalk.white(url)}\n` +
-    `${theme.chalkPrimary.bold('Output Path:')}   ${chalk.white(outPath)}\n` +
-    `${theme.chalkPrimary.bold('Max Depth:')}     ${chalk.white(maxDepth)}\n` +
-    `${theme.chalkPrimary.bold('ZIP Archive:')}   ${skipZip ? theme.chalkMuted('Disabled') : theme.chalkSecondary('Enabled')}\n` +
-    `${theme.chalkPrimary.bold('Theme Palette:')} ${theme.chalkAccent(theme.name)}\n` +
-    `${theme.chalkPrimary.bold('Verbose Mode:')}  ${verbose ? theme.chalkAccent('Enabled') : theme.chalkMuted('Disabled')}`;
+    `${theme.chalkPrimary.bold('Target URL:')}      ${chalk.white(url)}\n` +
+    `${theme.chalkPrimary.bold('Output Path:')}     ${chalk.white(outPath)}\n` +
+    `${theme.chalkPrimary.bold('Max Depth:')}       ${chalk.white(maxDepth)}\n` +
+    `${theme.chalkPrimary.bold('AI Supervision:')}  ${useAI ? theme.chalkAccent('Enabled (Auto-Repair & Healing)') : theme.chalkMuted('Disabled')}\n` +
+    `${theme.chalkPrimary.bold('ZIP Archive:')}     ${skipZip ? theme.chalkMuted('Disabled') : theme.chalkSecondary('Enabled')}\n` +
+    `${theme.chalkPrimary.bold('Theme Palette:')}   ${theme.chalkAccent(theme.name)}\n` +
+    `${theme.chalkPrimary.bold('Verbose Mode:')}    ${verbose ? theme.chalkAccent('Enabled') : theme.chalkMuted('Disabled')}`;
 
   console.log(
     boxen(content, {
@@ -368,7 +375,7 @@ export function renderConfigSummary({ url, outPath, maxDepth, skipZip, verbose }
       margin: { top: 0, bottom: 1 },
       borderStyle: 'round',
       borderColor: theme.secondaryHex,
-      title: theme.chalkPrimary.bold(' [ Configuration ] '),
+      title: theme.chalkPrimary.bold(' [ Download & AI Configuration ] '),
       titleAlignment: 'left'
     })
   );

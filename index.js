@@ -222,20 +222,26 @@ async function main() {
       zipPath
     });
 
-    // Ask to run AI Auto-Supervisor to audit, fix and heal the downloaded project
-    try {
-      const shouldSupervise = await confirm({
-        message: 'Would you like AI Supervisor to audit, fix broken links & heal this website now?',
-        default: true
-      });
+    // AI Auto-Supervisor to audit, fix and heal the downloaded project
+    if (config.useAI === true) {
+      await runAIProjectSupervisor(outPath);
+    } else if (config.useAI === false) {
+      await promptBrowserPreview(outPath);
+    } else {
+      try {
+        const shouldSupervise = await confirm({
+          message: 'Would you like AI Supervisor to audit, fix broken links & heal this website now?',
+          default: true
+        });
 
-      if (shouldSupervise) {
-        await runAIProjectSupervisor(outPath);
-      } else {
+        if (shouldSupervise) {
+          await runAIProjectSupervisor(outPath);
+        } else {
+          await promptBrowserPreview(outPath);
+        }
+      } catch {
         await promptBrowserPreview(outPath);
       }
-    } catch {
-      await promptBrowserPreview(outPath);
     }
 
   } catch (err) {

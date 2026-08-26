@@ -8,6 +8,38 @@ import { input, select, confirm, password } from '@inquirer/prompts';
 import { getTheme, renderHeader } from './ui.js';
 import open from 'open';
 import { execSync } from 'child_process';
+import * as cheerio from 'cheerio';
+
+// AI Reasoning & Power Levels
+export const AI_POWER_LEVELS = {
+  high: {
+    id: 'high',
+    name: 'High (Deep Reasoning & Maximum Fidelity)',
+    description: 'Uses flagship Gemini 3.7 Flash with low temperature (0.2) for pixel-perfect code & layout replica',
+    model: 'gemini-3.7-flash',
+    fallback: 'gemini-2.0-flash',
+    temperature: 0.2,
+    maxOutputTokens: 8192
+  },
+  medium: {
+    id: 'medium',
+    name: 'Medium (Balanced Speed & Accuracy)',
+    description: 'Uses Gemini 3.5 Flash (temp 0.7) for clean, fast, balanced HTML/CSS generation',
+    model: 'gemini-3.5-flash',
+    fallback: 'gemini-2.0-flash',
+    temperature: 0.7,
+    maxOutputTokens: 4096
+  },
+  low: {
+    id: 'low',
+    name: 'Low / Fast (Rapid Draft & Low Latency)',
+    description: 'Uses Gemini 3.6 Flash (temp 0.8) for ultra-fast drafts & quick component outlines',
+    model: 'gemini-3.6-flash',
+    fallback: 'gemini-1.5-flash',
+    temperature: 0.8,
+    maxOutputTokens: 2048
+  }
+};
 
 // Supported Gemini Models (as requested)
 export const GEMINI_MODELS = [
@@ -33,7 +65,7 @@ export const GEMINI_MODELS = [
     id: 'gemini-3.1-pro',
     name: 'Gemini 3.1 Pro (Deep Architectural & Complex Refactoring)',
     description: 'Deep intelligence for large codebases and complex design systems',
-    fallback: 'gemini-1.5-pro'
+    fallback: 'gemini-2.0-flash'
   },
   {
     id: 'gemini-2.0-flash',
@@ -57,8 +89,9 @@ const CONFIG_PATH = path.join(os.homedir(), '.mirror-ai-config.json');
 export function loadAIConfig() {
   const defaultConfig = {
     apiKey: process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || '',
+    powerLevel: 'high',
     model: 'gemini-3.7-flash',
-    temperature: 0.7,
+    temperature: 0.2,
     maxOutputTokens: 8192
   };
 
@@ -108,8 +141,11 @@ export async function ensureApiKey(theme = getTheme()) {
     }
   ));
 
+  console.log(theme.chalkMuted('  Tip: Paste your key using Ctrl+V or Right-Click, then press Enter.\n'));
+
   const key = await password({
-    message: theme.chalkPrimary('Enter your Gemini API Key:')
+    message: theme.chalkPrimary('Enter your Gemini API Key:'),
+    mask: '*'
   });
 
   if (!key || !key.trim()) {
@@ -123,14 +159,42 @@ export async function ensureApiKey(theme = getTheme()) {
 }
 
 /**
- * Direct Gemini API Caller with Fallback
+ * Clean and compact HTML for AI processing (strips bloat, base64, and huge scripts)
+ */
+export function cleanHtmlForAI(html) {
+  try {
+    const $ = cheerio.load(html);
+    $('script, noscript, style, iframe, svg, link[rel="stylesheet"]').remove();
+    $('img').each((_, el) => {
+      const src = $(el).attr('src') || '';
+      if (src.startsWith('data:')) {
+        $(el).attr('src', 'image.jpg');
+      }
+    });
+    $('*').each((_, el) => {
+      const attribs = el.attribs || {};
+      for (const k of Object.keys(attribs)) {
+        if (attribs[k] && attribs[k].length > 150) {
+          $(el).removeAttr(k);
+        }
+      }
+    });
+    const bodyHtml = $('body').html() || html;
+    return bodyHtml.replace(/\s+/g, ' ').trim().slice(0, 15000);
+  } catch {
+    return html.replace(/data:image\/[^;]+;base64,[^"']+/g, '...').slice(0, 15000);
+  }
+}
+
+/**
+ * Direct Gemini API Caller with Fallback and Retry
  */
 export async function callGemini({
   prompt,
   systemInstruction = 'You are an expert AI Frontend Engineer & Web Architect inside Mirror CLI.',
   model = null,
   apiKey = null,
-  temperature = 0.7,
+  temperature = 0.2,
   maxOutputTokens = 8192
 }) {
   const config = loadAIConfig();
@@ -168,7 +232,8 @@ export async function callGemini({
       headers: {
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify(bodyPayload)
+      body: JSON.stringify(bodyPayload),
+      signal: AbortSignal.timeout(90000)
     });
 
     if (!response.ok) {
@@ -186,23 +251,50 @@ export async function callGemini({
     return text;
   }
 
-  try {
-    return await requestModel(activeModel);
-  } catch (err) {
-    if (err.status === 404) {
-      const modelDef = GEMINI_MODELS.find(m => m.id === activeModel);
-      if (modelDef && modelDef.fallback && modelDef.fallback !== activeModel) {
-        return await requestModel(modelDef.fallback);
+  // Build candidate fallback models list with ultra-stable gemini-2.0-flash as primary fallback
+  const fallbackChain = [
+    activeModel,
+    'gemini-2.0-flash',
+    'gemini-2.0-flash-lite',
+    'gemini-1.5-flash'
+  ].filter(Boolean).filter((v, i, a) => a.indexOf(v) === i);
+
+  let lastError = null;
+
+  for (const candidateModel of fallbackChain) {
+    try {
+      return await requestModel(candidateModel);
+    } catch (err) {
+      lastError = err;
+      const isRetryable =
+        err.status === 404 ||
+        err.status === 400 ||
+        err.status === 503 ||
+        err.status === 429 ||
+        err.status === 500 ||
+        (err.message && (
+          err.message.includes('not found') ||
+          err.message.includes('not supported') ||
+          err.message.includes('fetch failed') ||
+          err.message.includes('high demand') ||
+          err.message.includes('overloaded') ||
+          err.message.includes('quota') ||
+          err.message.includes('timeout') ||
+          err.message.includes('temporarily unavailable')
+        ));
+
+      if (isRetryable) {
+        continue;
       }
+      throw err;
     }
-    throw err;
   }
+
+  throw lastError || new Error('All candidate Gemini models failed to respond.');
 }
 
 /**
  * 1. AI Auto-Supervisor & Code Healer
- * Audits, fixes broken links, heals preloader scroll lock, injects missing CDNs/libraries,
- * and ensures the downloaded website functions completely offline.
  */
 export async function runAIProjectSupervisor(targetFolder = null) {
   const theme = getTheme();
@@ -287,7 +379,7 @@ export async function runAIProjectSupervisor(targetFolder = null) {
       totalFixes++;
     }
 
-    // B. Fix preloader scroll lock (overflow: hidden on body/html)
+    // B. Fix preloader scroll lock
     if (content.includes('pl-overlay') || content.includes('preloader') || content.includes('loading-screen')) {
       const unlockScript = `
 <!-- Mirror CLI AI Auto-Healer: Preloader Scroll Fallback -->
@@ -410,13 +502,29 @@ Provide a concise, structured markdown report with bullet points.`;
 }
 
 /**
- * 2. AI Live Website Cloner & Code Generator
+ * 2. AI Live Website Cloner & Code Generator (Crystal Clear Workflow)
  */
 export async function runAIWebRecreator() {
   const theme = getTheme();
   renderHeader();
-  console.log(theme.chalkPrimary.bold('\n[ AI Website Recreator & Code Generator ]\n'));
-  console.log(theme.chalkMuted('  Provide a URL or local HTML to generate a clean, responsive code replica.\n'));
+  
+  console.log(
+    boxen(
+      `${theme.chalkPrimary.bold('⚡ AI Website Recreator & Architecture Synthesizer')}\n\n` +
+      `${theme.chalkAccent('How AI Recreation Works (4-Step Workflow):')}\n` +
+      ` 1. ${chalk.white('Inspect & Fetch:')} Analyzes live website DOM, visual tokens & responsive structure.\n` +
+      ` 2. ${chalk.white('Sanitize & Strip:')} Removes ads, trackers, and bulky Base64 bloat.\n` +
+      ` 3. ${chalk.white('Synthesize Code:')} Generates pixel-perfect production code (HTML / Tailwind / React).\n` +
+      ` 4. ${chalk.white('Export & Preview:')} Writes ready-to-run file with instant browser preview.`,
+      {
+        padding: 1,
+        borderStyle: theme.borderStyle,
+        borderColor: theme.primaryHex,
+        title: ' [ AI Recreation Workflow ] ',
+        titleAlignment: 'left'
+      }
+    )
+  );
 
   const apiKey = await ensureApiKey(theme);
   const config = loadAIConfig();
@@ -429,35 +537,50 @@ export async function runAIWebRecreator() {
   const outputFormat = await select({
     message: theme.chalkPrimary('Select target code architecture:'),
     choices: [
-      { name: '[1] Modern Single-File HTML + Tailwind CSS (Full responsive replica)', value: 'html-tailwind' },
-      { name: '[2] Semantic HTML5 + Pure Vanilla CSS3 (Flex/Grid/Animations, no frameworks)', value: 'html-css' },
+      { name: '[1] Modern Single-File HTML + Tailwind CSS (Full responsive replica with CDN)', value: 'html-tailwind' },
+      { name: '[2] Semantic HTML5 + Pure Vanilla CSS3 (CSS Grid, Flexbox & Keyframes)', value: 'html-css' },
       { name: '[3] React / Next.js Component (Tailwind + Lucide icons + Framer Motion)', value: 'react' }
     ]
   });
 
+  const powerChoice = await select({
+    message: theme.chalkPrimary('Select AI Power & Reasoning Level:'),
+    choices: [
+      { name: '[1] High Power (Deep Reasoning & Maximum Fidelity - Gemini 3.7 Flash)', value: 'high' },
+      { name: '[2] Medium Power (Balanced Speed & Precision - Gemini 3.5 Flash)', value: 'medium' },
+      { name: '[3] Low / Fast Power (Ultra Rapid Draft - Gemini 3.6 Flash)', value: 'low' }
+    ]
+  });
+
+  const selectedPower = AI_POWER_LEVELS[powerChoice] || AI_POWER_LEVELS.high;
+
   let rawContent = '';
   let sourceLabel = targetInput;
 
-  const fetchSpinner = ora('Gathering page structure and assets...').start();
+  const fetchSpinner = ora('Step [1/4]: Extracting and sanitizing website structure...').start();
   try {
     if (targetInput.startsWith('http://') || targetInput.startsWith('https://')) {
       const res = await fetch(targetInput, {
-        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+        signal: AbortSignal.timeout(20000)
       });
       rawContent = await res.text();
-      rawContent = rawContent.slice(0, 30000);
     } else if (fs.existsSync(targetInput)) {
-      rawContent = fs.readFileSync(targetInput, 'utf-8').slice(0, 30000);
+      rawContent = fs.readFileSync(targetInput, 'utf-8');
     } else {
       rawContent = `URL or concept: ${targetInput}`;
     }
-    fetchSpinner.succeed('Page data extracted.');
+    fetchSpinner.succeed('Step [1/4]: Page structure extracted successfully.');
   } catch (err) {
-    fetchSpinner.warn(`Could not directly fetch (${err.message}). Proceeding with prompt synthesis.`);
+    fetchSpinner.warn(`Step [1/4]: Direct fetch note (${err.message}). Proceeding with prompt synthesis.`);
     rawContent = `Target URL: ${targetInput}`;
   }
 
-  const genSpinner = ora(`Generating code with ${theme.chalkAccent(config.model)}...`).start();
+  const cleanSpinner = ora('Step [2/4]: Sanitizing HTML & stripping bloat...').start();
+  const sanitizedHtml = cleanHtmlForAI(rawContent);
+  cleanSpinner.succeed(`Step [2/4]: Sanitized HTML (${Math.round(sanitizedHtml.length / 1024)} KB clean DOM payload).`);
+
+  const genSpinner = ora(`Step [3/4]: Synthesizing code with ${theme.chalkAccent(selectedPower.name)}...`).start();
 
   const systemInstruction = `You are a world-class Frontend Architect specializing in pixel-perfect website recreation.
 Output ONLY the requested code without conversational preamble. Make the output 100% complete, fully responsive, modern, and production ready.`;
@@ -466,7 +589,7 @@ Output ONLY the requested code without conversational preamble. Make the output 
 Source reference: ${sourceLabel}
 HTML/Content excerpt:
 \`\`\`html
-${rawContent}
+${sanitizedHtml}
 \`\`\`
 
 Requirements:
@@ -480,10 +603,14 @@ Requirements:
       prompt,
       systemInstruction,
       apiKey,
-      model: config.model
+      model: selectedPower.model,
+      temperature: selectedPower.temperature,
+      maxOutputTokens: selectedPower.maxOutputTokens
     });
 
-    genSpinner.succeed('Code recreation generated successfully!');
+    genSpinner.succeed('Step [3/4]: Code recreation synthesized successfully!');
+
+    const saveSpinner = ora('Step [4/4]: Saving and formatting output file...').start();
 
     let filename = 'recreated-site.html';
     if (outputFormat === 'react') filename = 'RecreatedComponent.jsx';
@@ -496,15 +623,19 @@ Requirements:
 
     const outputPath = path.resolve(filename);
     fs.writeFileSync(outputPath, cleanCode, 'utf-8');
+    saveSpinner.succeed(`Step [4/4]: Saved ${filename} successfully.`);
 
     console.log('\n' + boxen(
-      theme.chalkSecondary('✔ Output Saved To:') + ` ${chalk.green.bold(outputPath)}\n` +
-      theme.chalkSecondary('Architectural Format:') + ` ${chalk.white(outputFormat)}\n` +
-      theme.chalkSecondary('AI Model:') + ` ${chalk.white(config.model)}`,
+      `${theme.chalkSecondary('✔ Output File:')}     ${chalk.green.bold(outputPath)}\n` +
+      `${theme.chalkSecondary('Format:')}           ${chalk.white(outputFormat)}\n` +
+      `${theme.chalkSecondary('AI Power Level:')}   ${theme.chalkAccent(selectedPower.name)}\n` +
+      `${theme.chalkSecondary('Model Used:')}       ${chalk.white(selectedPower.model)}`,
       {
         padding: 1,
         borderStyle: 'round',
-        borderColor: theme.primaryHex
+        borderColor: theme.primaryHex,
+        title: theme.chalkPrimary.bold(' [ Recreation Complete ] '),
+        titleAlignment: 'left'
       }
     ));
 
@@ -517,8 +648,7 @@ Requirements:
       await open(outputPath);
     }
   } catch (err) {
-    genSpinner.fail('Generation failed!');
-    console.log(chalk.red(`\n❌ Error: ${err.message}\n`));
+    genSpinner.fail('Generation failed: ' + err.message);
   }
 
   await input({ message: theme.chalkPrimary('↵ Press [ENTER] to return to AI Menu') });
@@ -784,12 +914,14 @@ export async function runAISettings() {
     renderHeader();
     const config = loadAIConfig();
     const activeModelDef = GEMINI_MODELS.find(m => m.id === config.model);
+    const activePowerDef = AI_POWER_LEVELS[config.powerLevel] || AI_POWER_LEVELS.high;
     const maskedKey = config.apiKey
       ? config.apiKey.slice(0, 6) + '...' + config.apiKey.slice(-4)
       : chalk.red('NOT CONFIGURED');
 
     console.log(
       boxen(
+        `${theme.chalkSecondary('AI Power Level:')}      ${theme.chalkAccent.bold(activePowerDef.name)}\n` +
         `${theme.chalkSecondary('Active Gemini Model:')} ${theme.chalkAccent.bold(config.model)} ${theme.chalkMuted(`(${activeModelDef ? activeModelDef.name : 'Custom'})`)}\n` +
         `${theme.chalkSecondary('Gemini API Key:     ')} ${maskedKey}\n` +
         `${theme.chalkSecondary('Temperature:        ')} ${chalk.white(config.temperature)}\n` +
@@ -808,15 +940,39 @@ export async function runAISettings() {
       const settingChoice = await select({
         message: theme.chalkPrimary('Select an AI setting to modify:'),
         choices: [
-          { name: '[1] Change Active Gemini Model (3.7 Flash, 3.6 Flash, 3.5 Flash, 3.1 Pro...)', value: 'model' },
-          { name: '[2] Update Gemini API Key', value: 'key' },
-          { name: '[3] Test API Connection & Model Ping', value: 'test' },
-          { name: '[4] Adjust Creativity Temperature', value: 'temp' },
+          { name: '[1] Change AI Power Level (High / Medium / Low / Custom)', value: 'power' },
+          { name: '[2] Change Active Gemini Model (3.7 Flash, 3.6 Flash, 3.5 Flash, 3.1 Pro...)', value: 'model' },
+          { name: '[3] Update Gemini API Key', value: 'key' },
+          { name: '[4] Test API Connection & Model Ping', value: 'test' },
+          { name: '[5] Adjust Creativity Temperature & Max Tokens', value: 'temp' },
           { name: '[<] Back to AI Menu', value: 'back' }
         ]
       });
 
-      if (settingChoice === 'model') {
+      if (settingChoice === 'power') {
+        const powerChoices = Object.keys(AI_POWER_LEVELS).map(k => {
+          const p = AI_POWER_LEVELS[k];
+          return {
+            name: `${p.name} ${config.powerLevel === k ? '✔ (Active)' : ''}`,
+            value: k,
+            description: p.description
+          };
+        });
+
+        const selectedPower = await select({
+          message: theme.chalkPrimary('Choose AI Power / Reasoning Preset:'),
+          choices: powerChoices
+        });
+
+        const preset = AI_POWER_LEVELS[selectedPower];
+        config.powerLevel = selectedPower;
+        config.model = preset.model;
+        config.temperature = preset.temperature;
+        config.maxOutputTokens = preset.maxOutputTokens;
+        saveAIConfig(config);
+        console.log(theme.chalkSecondary(`\n  ✔ AI Power Level updated to ${preset.name}!\n`));
+
+      } else if (settingChoice === 'model') {
         const modelChoices = GEMINI_MODELS.map(m => ({
           name: `${m.name} ${m.id === config.model ? '✔ (Active)' : ''}`,
           value: m.id,
@@ -842,8 +998,10 @@ export async function runAISettings() {
           saveAIConfig(config);
         }
       } else if (settingChoice === 'key') {
+        console.log(theme.chalkMuted('\n  Tip: Paste your key using Ctrl+V or Right-Click, then press Enter.'));
         const newKey = await password({
-          message: theme.chalkPrimary('Enter new Google Gemini API Key:')
+          message: theme.chalkPrimary('Enter new Google Gemini API Key:'),
+          mask: '*'
         });
         if (newKey.trim()) {
           config.apiKey = newKey.trim();
@@ -854,7 +1012,7 @@ export async function runAISettings() {
         await testGeminiConnection();
       } else if (settingChoice === 'temp') {
         const newTemp = await input({
-          message: theme.chalkPrimary('Enter temperature (0.0 to 1.0, default 0.7):'),
+          message: theme.chalkPrimary('Enter temperature (0.0 = exact reasoning, 1.0 = creative):'),
           default: String(config.temperature)
         });
         const parsed = parseFloat(newTemp);
@@ -882,12 +1040,14 @@ export async function runAIMenu() {
   while (inAIMenu) {
     renderHeader();
     const config = loadAIConfig();
+    const activePowerDef = AI_POWER_LEVELS[config.powerLevel] || AI_POWER_LEVELS.high;
 
     console.log(
       boxen(
         `${theme.chalkPrimary.bold('Mirror CLI AI Studio & Gemini Engine')}\n` +
         `${theme.chalkMuted('Google Gemini Models: 3.7 Flash, 3.6 Flash, 3.5 Flash, 3.1 Pro')}\n\n` +
-        `${theme.chalkSecondary('Active Model:')} ${theme.chalkAccent.bold(config.model)}  |  ${theme.chalkSecondary('Status:')} ${config.apiKey ? chalk.green('● API Key Configured') : chalk.red('○ Missing API Key')}`,
+        `${theme.chalkSecondary('Power Level:')}   ${theme.chalkAccent.bold(activePowerDef.name)}\n` +
+        `${theme.chalkSecondary('Active Model:')}  ${theme.chalkAccent.bold(config.model)}  |  ${theme.chalkSecondary('Status:')} ${config.apiKey ? chalk.green('● API Key Configured') : chalk.red('○ Missing API Key')}`,
         {
           padding: 1,
           borderStyle: theme.borderStyle,
@@ -907,7 +1067,7 @@ export async function runAIMenu() {
           { name: '[4] AI Design Tokens & Color Palette Extractor', value: 'tokens' },
           { name: '[5] Interactive AI Terminal Assistant (Live Chat with Gemini)', value: 'chat' },
           { name: '[6] Test Gemini API Connection', value: 'test' },
-          { name: '[7] AI Settings & Model Selector (3.7 / 3.6 / 3.5 Flash, 3.1 Pro)', value: 'settings' },
+          { name: '[7] AI Settings & Power Level (High / Medium / Low / Models)', value: 'settings' },
           { name: '[<] Back to Main Menu', value: 'back' }
         ]
       });

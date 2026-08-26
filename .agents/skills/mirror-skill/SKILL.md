@@ -29,7 +29,7 @@ When this skill is triggered, you MUST ask or clarify the following options to n
 - **Hero Section Only**: Focus strictly on the main hero banner / top section with its interactions.
 
 ### Step 2: Select Action / Output Goal (الهدف من العملية)
-- **A) Download Site Files**: Run Mirror CLI (`site-downloader`) to fetch static HTML, CSS, JS, and media assets.
+- **A) Download Site Files**: Run Mirror CLI (`mirror` / `mirror-cli`) to fetch static HTML, CSS, JS, and media assets.
 - **B) Generate AI Recreation Prompt**: Write an expressively detailed master prompt (`site_details.md`) covering colors, animations, scroll effects, component architecture, and responsive placement.
 - **C) Both (Recommended)**: Download the files AND generate the master responsive AI prompt (`site_details.md`) inside the downloaded site folder.
 
@@ -43,9 +43,9 @@ When this skill is triggered, you MUST ask or clarify the following options to n
 ## Execution & Active Supervision Protocol
 
 ### Option A: Downloading Site Files & Active AI Monitoring
-Run the site-downloader CLI command in terminal:
+Run the Mirror CLI command in terminal:
 ```bash
-npx site-downloader <URL> --out "<DESTINATION_PATH>"
+npx mirror-cli <URL> --out "<DESTINATION_PATH>"
 ```
 Or run local script inside project (using domain name directly as destination folder, NEVER adding `_cloned` suffix):
 ```bash

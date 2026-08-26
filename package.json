@@ -1,11 +1,12 @@
 {
-  "name": "site-downloader",
+  "name": "mirror-cli",
   "version": "1.2.9",
-  "description": "CLI tool to download/clone websites by URL - clean, fast, free",
+  "description": "Mirror CLI - Ultra-Fidelity Website Cloner & AI Engineering Suite",
   "type": "module",
   "main": "index.js",
   "bin": {
     "mirror": "index.js",
+    "mirror-cli": "index.js",
     "site-downloader": "index.js"
   },
   "scripts": {
@@ -26,9 +27,11 @@
     "puppeteer": "^24.0.0"
   },
   "keywords": [
+    "mirror-cli",
+    "website-cloner",
+    "site-mirror",
+    "ai-website-builder",
     "website-downloader",
-    "site-cloner",
-    "wget",
     "puppeteer",
     "static-site"
   ]

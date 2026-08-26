@@ -1,7 +1,7 @@
 # 🚀 Mirror CLI & Antigravity Skill
 
-> **Ultra-Fidelity Website Downloader & AI Design Prompt Generator.**  
-> Mirror any website with 100% pixel-perfect accuracy, auto-self-healing directory structures, asset link sanitation, and automated master AI recreation prompts (`site_details.md`).
+> **Ultra-Fidelity Website Cloner & AI Engineering Suite.**  
+> Mirror any website with 100% pixel-perfect accuracy, AI-powered code recreation, design token extraction, and Google Gemini integration (3.7 / 3.6 / 3.5 Flash & 3.1 Pro).
 
 ---
 

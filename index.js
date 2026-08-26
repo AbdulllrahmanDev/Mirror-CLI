@@ -21,6 +21,8 @@ import {
 } from './src/ui.js';
 import { runSkillInstaller } from './src/skill-installer.js';
 import { runPromptGeneratorWizard } from './src/prompt-generator.js';
+import { runAIMenu, runAIProjectSupervisor } from './src/ai.js';
+import { confirm } from '@inquirer/prompts';
 import fs from 'fs';
 import path from 'path';
 
@@ -53,6 +55,11 @@ async function main() {
     process.exit(0);
   }
 
+  if (args.includes('--ai') || args.includes('-a')) {
+    await runAIMenu();
+    process.exit(0);
+  }
+
   let config = null;
 
   if (args.length === 0) {
@@ -63,6 +70,8 @@ async function main() {
         config = await runInteractiveWizard(false);
       } else if (choice === 'advanced') {
         config = await runInteractiveWizard(true);
+      } else if (choice === 'ai') {
+        await runAIMenu();
       } else if (choice === 'prompt') {
         await runPromptGeneratorWizard();
       } else if (choice === 'skill') {
@@ -213,7 +222,21 @@ async function main() {
       zipPath
     });
 
-    await promptBrowserPreview(outPath);
+    // Ask to run AI Auto-Supervisor to audit, fix and heal the downloaded project
+    try {
+      const shouldSupervise = await confirm({
+        message: 'Would you like AI Supervisor to audit, fix broken links & heal this website now?',
+        default: true
+      });
+
+      if (shouldSupervise) {
+        await runAIProjectSupervisor(outPath);
+      } else {
+        await promptBrowserPreview(outPath);
+      }
+    } catch {
+      await promptBrowserPreview(outPath);
+    }
 
   } catch (err) {
     renderError(err, verbose);

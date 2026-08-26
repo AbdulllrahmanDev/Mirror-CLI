@@ -151,7 +151,7 @@ export function renderHeader() {
     styledAscii = titleGradient(asciiText);
   }
   
-  const subtitle = theme.chalkPrimary.bold('  Website Cloner & Offline Downloader') + theme.chalkMuted(' | v1.2.9');
+  const subtitle = theme.chalkPrimary.bold('  Website Cloner & AI Engineering Suite') + theme.chalkMuted(' | v1.2.9');
   const banner = `${styledAscii}\n${subtitle}`;
 
   console.log(
@@ -173,14 +173,15 @@ export async function showMainMenu() {
     const choice = await select({
       message: theme.chalkPrimary.bold('Main Menu — Select an option (Press [ESC] to exit):'),
       choices: [
-        { name: '>  Quick Download (URL only)', value: 'quick' },
-        { name: '*  Advanced Download Wizard', value: 'advanced' },
-        { name: 'p  Generate AI Prompt (website_prompt.md for any URL)', value: 'prompt' },
-        { name: '+  Export AI Skill (SKILL.md / /Mirror agent command)', value: 'skill' },
-        { name: '@  Select Color Theme', value: 'theme' },
-        { name: '#  View Download History', value: 'history' },
-        { name: '?  Help & Usage Guide', value: 'help' },
-        { name: 'x  Exit', value: 'exit' }
+        { name: '[>]  Quick Download (URL only)', value: 'quick' },
+        { name: '[*]  Advanced Download Wizard', value: 'advanced' },
+        { name: '[AI] AI Studio & Gemini Supervisor (Models 3.7 / 3.6 / 3.5 Flash & 3.1 Pro)', value: 'ai' },
+        { name: '[P]  Generate AI Prompt (site_details.md for any URL)', value: 'prompt' },
+        { name: '[+]  Export AI Skill (Antigravity IDE /Mirror command)', value: 'skill' },
+        { name: '[@]  Select Color Theme', value: 'theme' },
+        { name: '[#]  View Download History', value: 'history' },
+        { name: '[?]  Help & Usage Guide', value: 'help' },
+        { name: '[X]  Exit', value: 'exit' }
       ]
     });
     return choice;
@@ -198,38 +199,42 @@ export async function renderHelp(interactive = false) {
   const theme = getTheme();
   
   const overview = theme.chalkPrimary.bold('[ About Mirror CLI ]\n') +
-    '  Mirror CLI is a fast tool to clone any website for offline viewing.\n' +
+    '  Mirror CLI is an ultra-fidelity website cloner and AI engineering suite.\n' +
     '  It downloads HTML pages, images, stylesheets, scripts, and web fonts,\n' +
-    '  then rewrites all internal links so you can browse the site offline.\n';
+    '  rewrites all internal links for offline browsing, and integrates directly with\n' +
+    '  Google Gemini AI (3.7 Flash, 3.6 Flash, 3.5 Flash, 3.1 Pro) for code recreation & design systems.\n';
 
   const quickStart = theme.chalkPrimary.bold('\n[ Getting Started (2 Easy Ways) ]\n') +
     `  ${theme.chalkAccent('1. Interactive Dashboard (No setup required)')}\n` +
-    `     Run: ${theme.chalkSecondary('node index.js')}\n` +
+    `     Run: ${theme.chalkSecondary('mirror')} or ${theme.chalkSecondary('node index.js')}\n` +
     `     Follow the step-by-step menu prompts.\n\n` +
     `  ${theme.chalkAccent('2. One-Line Direct Command')}\n` +
-    `     Run: ${theme.chalkSecondary('node index.js https://example.com')}`;
+    `     Run: ${theme.chalkSecondary('mirror https://example.com')}`;
 
   const options = theme.chalkPrimary.bold('\n[ Command Options & Flags ]\n') +
     `  ${theme.chalkSecondary('-o, --output <dir>')}    ${chalk.white('Folder name to save files')} ${theme.chalkMuted('(default: site domain)')}\n` +
     `  ${theme.chalkSecondary('-d, --depth <num>')}     ${chalk.white('Crawl depth (1=home page, 3=standard, 5=deep)')}\n` +
+    `  ${theme.chalkSecondary('-a, --ai')}              ${chalk.white('Open AI Studio (Gemini 3.7 / 3.6 / 3.5 Flash & 3.1 Pro)')}\n` +
+    `  ${theme.chalkSecondary('-p, --prompt')}          ${chalk.white('Interactive AI Master Prompt Generator')}\n` +
     `  ${theme.chalkSecondary('--theme <name>')}      ${chalk.white('Color theme (sage, nord, cyberpunk, matrix, sunset...)')}\n` +
     `  ${theme.chalkSecondary('--no-zip')}              ${chalk.white('Skip creating the compressed .zip archive package')}\n` +
     `  ${theme.chalkSecondary('--verbose')}             ${chalk.white('Show live download logs & detailed diagnostics')}\n` +
     `  ${theme.chalkSecondary('-h, --help')}              ${chalk.white('Display this detailed help & usage guide')}`;
 
-  const phases = theme.chalkPrimary.bold('\n[ How the Download Process Works ]\n') +
+  const phases = theme.chalkPrimary.bold('\n[ How the Download & AI Process Works ]\n') +
     `  ${theme.chalkSecondary('[1/4] Crawling')}   ${theme.chalkMuted('Discovers website pages using headless browser')}\n` +
     `  ${theme.chalkSecondary('[2/4] Assets')}     ${theme.chalkMuted('Downloads images, CSS, JavaScript files & web fonts')}\n` +
     `  ${theme.chalkSecondary('[3/4] Rewriting')}  ${theme.chalkMuted('Converts web URLs to local relative paths')}\n` +
-    `  ${theme.chalkSecondary('[4/4] Archive')}    ${theme.chalkMuted('Packs the site into a single compressed .zip file')}`;
+    `  ${theme.chalkSecondary('[4/4] Archive')}    ${theme.chalkMuted('Packs the site into a single compressed .zip file')}\n` +
+    `  ${theme.chalkSecondary('[🤖] Gemini AI')}  ${theme.chalkMuted('Recreates full responsive components & extracts design tokens')}`;
 
   const examples = theme.chalkPrimary.bold('\n[ Helpful Usage Examples ]\n') +
     `  ${theme.chalkMuted('# Clone homepage only (-d 1)')}\n` +
-    `  ${theme.chalkAccent('node index.js')} ${chalk.underline('https://example.com')} ${theme.chalkSecondary('-d')} 1\n\n` +
-    `  ${theme.chalkMuted('# Save to a custom folder named "my-site"')}\n` +
-    `  ${theme.chalkAccent('node index.js')} ${chalk.underline('https://example.com')} ${theme.chalkSecondary('-o')} my-site\n\n` +
-    `  ${theme.chalkMuted('# Download with Matrix dark theme and verbose logs')}\n` +
-    `  ${theme.chalkAccent('node index.js')} ${chalk.underline('https://example.com')} ${theme.chalkSecondary('--theme')} matrix ${theme.chalkSecondary('--verbose')}`;
+    `  ${theme.chalkAccent('mirror')} ${chalk.underline('https://example.com')} ${theme.chalkSecondary('-d')} 1\n\n` +
+    `  ${theme.chalkMuted('# Launch Gemini AI Studio')}\n` +
+    `  ${theme.chalkAccent('mirror')} ${theme.chalkSecondary('--ai')}\n\n` +
+    `  ${theme.chalkMuted('# Save to a custom folder with Matrix theme')}\n` +
+    `  ${theme.chalkAccent('mirror')} ${chalk.underline('https://example.com')} ${theme.chalkSecondary('-o')} my-site ${theme.chalkSecondary('--theme')} matrix`;
 
   console.log(
     boxen(`${overview}${quickStart}\n${options}\n${phases}\n${examples}`, {

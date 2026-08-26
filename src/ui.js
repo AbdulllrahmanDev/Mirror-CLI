@@ -8,6 +8,7 @@ import { input, number, confirm, select } from '@inquirer/prompts';
 import open from 'open';
 import fs from 'fs';
 import path from 'path';
+import os from 'os';
 import { loadHistory, clearHistory } from './history.js';
 
 // RICH & DIVERSE THEMES (Light Coffee & Latte with Solid Block Logo is DEFAULT)
@@ -151,7 +152,7 @@ export function renderHeader() {
     styledAscii = titleGradient(asciiText);
   }
   
-  const subtitle = theme.chalkPrimary.bold('  Website Cloner & AI Engineering Suite') + theme.chalkMuted(' | v1.2.9');
+  const subtitle = theme.chalkPrimary.bold('  Website Cloner & AI Engineering Suite') + theme.chalkMuted(' | v1.3.0');
   const banner = `${styledAscii}\n${subtitle}`;
 
   console.log(
@@ -175,9 +176,12 @@ export async function showMainMenu() {
       choices: [
         { name: '[>]  Quick Download (URL only)', value: 'quick' },
         { name: '[*]  Advanced Download Wizard', value: 'advanced' },
+        { name: '[D]  Download Directory & Output Settings', value: 'folders' },
         { name: '[AI] AI Studio & Gemini Supervisor (Models 3.7 / 3.6 / 3.5 Flash & 3.1 Pro)', value: 'ai' },
         { name: '[P]  Generate AI Prompt (site_details.md for any URL)', value: 'prompt' },
         { name: '[+]  Export AI Skill (Antigravity IDE /Mirror command)', value: 'skill' },
+        { name: '[S]  Start Local Live Server (Preview with full ES Modules & WebGL)', value: 'server' },
+        { name: '[^]  Check for Updates (GitHub / Auto-Updater)', value: 'update' },
         { name: '[@]  Select Color Theme', value: 'theme' },
         { name: '[#]  View Download History', value: 'history' },
         { name: '[?]  Help & Usage Guide', value: 'help' },
@@ -215,9 +219,10 @@ export async function renderHelp(interactive = false) {
     `  ${theme.chalkSecondary('-o, --output <dir>')}    ${chalk.white('Folder name to save files')} ${theme.chalkMuted('(default: site domain)')}\n` +
     `  ${theme.chalkSecondary('-d, --depth <num>')}     ${chalk.white('Crawl depth (1=home page, 3=standard, 5=deep)')}\n` +
     `  ${theme.chalkSecondary('-a, --ai')}              ${chalk.white('Open AI Studio (Gemini 3.7 / 3.6 / 3.5 Flash & 3.1 Pro)')}\n` +
+    `  ${theme.chalkSecondary('-u, --update')}          ${chalk.white('Check GitHub for updates and auto-install latest version')}\n` +
     `  ${theme.chalkSecondary('-p, --prompt')}          ${chalk.white('Interactive AI Master Prompt Generator')}\n` +
     `  ${theme.chalkSecondary('--theme <name>')}      ${chalk.white('Color theme (sage, nord, cyberpunk, matrix, sunset...)')}\n` +
-    `  ${theme.chalkSecondary('--no-zip')}              ${chalk.white('Skip creating the compressed .zip archive package')}\n` +
+    `  ${theme.chalkSecondary('-z, --zip')}             ${chalk.white('Create a compressed .zip archive package')} ${theme.chalkMuted('(default: disabled)')}\n` +
     `  ${theme.chalkSecondary('--verbose')}             ${chalk.white('Show live download logs & detailed diagnostics')}\n` +
     `  ${theme.chalkSecondary('-h, --help')}              ${chalk.white('Display this detailed help & usage guide')}`;
 
@@ -285,6 +290,64 @@ export async function runThemeSelector() {
   }
 }
 
+export async function promptOutputDirectory(defaultDomain, theme) {
+  const { loadSettings, saveSettings } = await import('./config.js');
+  const settings = loadSettings();
+
+  const desktopFolder = path.join(os.homedir(), 'Desktop', defaultDomain).replace(/\\/g, '/');
+
+  const choices = [
+    {
+      name: `[1] CLI Project Folder → ./${defaultDomain} ${settings.defaultPreset === 'cli' ? '(Active Default)' : ''}`,
+      value: 'cli',
+      description: `Save in current CLI workspace: ./${defaultDomain}`
+    },
+    {
+      name: `[2] Desktop           → ~/Desktop/${defaultDomain} ${settings.defaultPreset === 'desktop' ? '(Active Default)' : ''}`,
+      value: 'desktop',
+      description: `Save directly on your Desktop`
+    },
+    {
+      name: `[3] Custom Path       → ${settings.customPath ? `(${settings.customPath}/${defaultDomain})` : 'Type any custom path...'} ${settings.defaultPreset === 'custom' ? '(Active Default)' : ''}`,
+      value: 'custom',
+      description: `Enter any custom folder path`
+    }
+  ];
+
+  const selected = await select({
+    message: theme.chalkPrimary.bold('Choose destination directory:'),
+    choices
+  });
+
+  let resolvedPath = defaultDomain;
+
+  if (selected === 'cli') {
+    resolvedPath = defaultDomain;
+    settings.defaultPreset = 'cli';
+    saveSettings(settings);
+  } else if (selected === 'desktop') {
+    resolvedPath = desktopFolder;
+    settings.defaultPreset = 'desktop';
+    saveSettings(settings);
+  } else if (selected === 'custom') {
+    const custom = await input({
+      message: theme.chalkPrimary('Enter custom destination folder:'),
+      default: settings.customPath || 'C:/Websites',
+      validate: (val) => {
+        if (!val || !val.trim()) return 'Path cannot be empty.';
+        return true;
+      }
+    });
+    const cleanedCustom = custom.trim().replace(/\\/g, '/');
+    settings.defaultPreset = 'custom';
+    settings.customPath = cleanedCustom;
+    saveSettings(settings);
+    resolvedPath = path.join(cleanedCustom, defaultDomain).replace(/\\/g, '/');
+  }
+
+  return resolvedPath;
+}
+
 export async function runInteractiveWizard(advanced = false) {
   renderHeader();
   const theme = getTheme();
@@ -309,15 +372,13 @@ export async function runInteractiveWizard(advanced = false) {
 
     let outputDir = defaultDomain;
     let maxDepth = 3;
-    let createZip = true;
+    let createZip = false;
     let verbose = false;
 
-    if (advanced) {
-      outputDir = await input({
-        message: 'Output directory path:',
-        default: defaultDomain
-      });
+    // Prompt destination folder with smart presets & custom path
+    outputDir = await promptOutputDirectory(defaultDomain, theme);
 
+    if (advanced) {
       maxDepth = await number({
         message: 'Max crawl depth (1 to 10):',
         default: 3,
@@ -327,7 +388,7 @@ export async function runInteractiveWizard(advanced = false) {
 
       createZip = await confirm({
         message: 'Create a compressed ZIP archive after download?',
-        default: true
+        default: false
       });
 
       verbose = await confirm({
@@ -463,13 +524,20 @@ export async function promptBrowserPreview(outPath) {
   if (fs.existsSync(indexPath)) {
     try {
       const shouldOpen = await confirm({
-        message: 'Would you like to open the cloned site in your default web browser now?',
+        message: 'Would you like to start local live server & preview the website in browser?',
         default: true
       });
 
       if (shouldOpen) {
-        console.log(theme.chalkPrimary(`\n  Opening ${indexPath} in browser...`));
-        await open(indexPath);
+        const { launchPreviewServer } = await import('./server.js');
+        const preview = await launchPreviewServer(outPath, true);
+        if (preview) {
+          await input({
+            message: theme.chalkPrimary('↵ Press [ENTER] when finished to stop the local preview server')
+          });
+          preview.server.close();
+          console.log(theme.chalkMuted('\n  Local server closed.\n'));
+        }
       }
     } catch (err) {
       if (err.name === 'ExitPromptError') return;

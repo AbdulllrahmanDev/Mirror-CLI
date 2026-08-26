@@ -1,5 +1,6 @@
 import * as cheerio from 'cheerio';
 import path from 'path';
+import fs from 'fs';
 import { isTrackerOrAnalytics } from './organizer.js';
 
 function toRelative(pageFilename, targetRelPath) {
@@ -258,15 +259,45 @@ export function rewriteHTML(html, pageUrl, baseUrl, assetMap, pageMap = new Map(
     } catch { /* skip */ }
   });
 
-  // 10. Inject Preloader & Scroll Unlock Sanitation Styles
+  // 10. Inject Preloader Fallback Sanitation Styles
   if ($('head').length > 0 && !$('#mirror-scroll-fix').length) {
     $('head').append(`
       <style id="mirror-scroll-fix">
-        html, body { overflow: auto !important; position: relative !important; }
         .pl-overlay, .preloader-overlay, .preloader-wrapper { pointer-events: none !important; opacity: 0 !important; visibility: hidden !important; display: none !important; }
       </style>
     `);
   }
 
   return $.html();
+}
+
+export function rewriteCSSFiles(outputDir, assetMap, baseUrl) {
+  function scanAndRewrite(dir) {
+    if (!fs.existsSync(dir)) return;
+    const entries = fs.readdirSync(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      const fullPath = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        scanAndRewrite(fullPath);
+      } else if (entry.isFile() && entry.name.endsWith('.css')) {
+        try {
+          let css = fs.readFileSync(fullPath, 'utf-8');
+          const relCssPath = path.relative(outputDir, fullPath).replace(/\\/g, '/');
+
+          css = css.replace(/url\((['"]?)([^'")]+)\1\)/gi, (match, quote, href) => {
+            const hrefTrimmed = href.trim();
+            if (!hrefTrimmed || hrefTrimmed.startsWith('data:') || hrefTrimmed.startsWith('#')) return match;
+            const resolved = resolveAssetPath(hrefTrimmed, baseUrl, assetMap, relCssPath);
+            if (resolved) {
+              return `url('${resolved}')`;
+            }
+            return match;
+          });
+
+          fs.writeFileSync(fullPath, css, 'utf-8');
+        } catch { /* skip */ }
+      }
+    }
+  }
+  scanAndRewrite(outputDir);
 }

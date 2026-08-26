@@ -17,7 +17,7 @@ export const AI_POWER_LEVELS = {
     name: 'High (Deep Reasoning & Maximum Fidelity)',
     description: 'Uses flagship Gemini 3.7 Flash with low temperature (0.2) for pixel-perfect code & layout replica',
     model: 'gemini-3.7-flash',
-    fallback: 'gemini-2.0-flash',
+    fallback: 'gemini-2.5-flash',
     temperature: 0.2,
     maxOutputTokens: 8192
   },
@@ -26,7 +26,7 @@ export const AI_POWER_LEVELS = {
     name: 'Medium (Balanced Speed & Accuracy)',
     description: 'Uses Gemini 3.5 Flash (temp 0.7) for clean, fast, balanced HTML/CSS generation',
     model: 'gemini-3.5-flash',
-    fallback: 'gemini-2.0-flash',
+    fallback: 'gemini-2.5-flash',
     temperature: 0.7,
     maxOutputTokens: 4096
   },
@@ -35,49 +35,49 @@ export const AI_POWER_LEVELS = {
     name: 'Low / Fast (Rapid Draft & Low Latency)',
     description: 'Uses Gemini 3.6 Flash (temp 0.8) for ultra-fast drafts & quick component outlines',
     model: 'gemini-3.6-flash',
-    fallback: 'gemini-1.5-flash',
+    fallback: 'gemini-2.5-flash',
     temperature: 0.8,
     maxOutputTokens: 2048
   }
 };
 
-// Supported Gemini Models (as requested)
+// Supported Gemini Models (Live Google AI Studio API verified)
 export const GEMINI_MODELS = [
   {
     id: 'gemini-3.7-flash',
-    name: 'Gemini 3.7 Flash (Hybrid Reasoning & Ultra Fast)',
-    description: 'Latest flagship flash model with advanced reasoning capabilities',
-    fallback: 'gemini-2.0-flash'
+    name: 'Gemini 3.7 Flash (Hybrid Reasoning & Flagship)',
+    description: 'Latest Google flagship model with advanced deep reasoning',
+    fallback: 'gemini-2.5-flash'
   },
   {
     id: 'gemini-3.6-flash',
     name: 'Gemini 3.6 Flash (High Performance & Low Latency)',
-    description: 'Optimized for fast web analysis and real-time generation',
-    fallback: 'gemini-2.0-flash'
+    description: 'Optimized for rapid web analysis and real-time generation',
+    fallback: 'gemini-2.5-flash'
   },
   {
     id: 'gemini-3.5-flash',
     name: 'Gemini 3.5 Flash (Balanced Code & Design Generator)',
     description: 'Fast, balanced output for HTML, CSS, and component extraction',
-    fallback: 'gemini-1.5-flash'
+    fallback: 'gemini-2.5-flash'
   },
   {
-    id: 'gemini-3.1-pro',
-    name: 'Gemini 3.1 Pro (Deep Architectural & Complex Refactoring)',
+    id: 'gemini-3.1-pro-preview',
+    name: 'Gemini 3.1 Pro Preview (Deep Architecture & Large Projects)',
     description: 'Deep intelligence for large codebases and complex design systems',
-    fallback: 'gemini-2.0-flash'
+    fallback: 'gemini-2.5-pro'
   },
   {
-    id: 'gemini-2.0-flash',
-    name: 'Gemini 2.0 Flash (Stable Standard)',
-    description: 'Production stable Gemini 2.0 model',
-    fallback: 'gemini-1.5-flash'
+    id: 'gemini-2.5-flash',
+    name: 'Gemini 2.5 Flash (Ultra-Stable & Fast)',
+    description: 'Production stable Gemini 2.5 flash model',
+    fallback: 'gemini-3.5-flash'
   },
   {
-    id: 'gemini-1.5-pro',
-    name: 'Gemini 1.5 Pro (Large Context Window)',
-    description: 'Handles massive files and extensive documentation',
-    fallback: 'gemini-1.5-flash'
+    id: 'gemini-2.5-pro',
+    name: 'Gemini 2.5 Pro (Massive Context & Reasoning)',
+    description: 'Deep context reasoning for large multi-page sites',
+    fallback: 'gemini-2.5-flash'
   }
 ];
 
@@ -251,12 +251,12 @@ export async function callGemini({
     return text;
   }
 
-  // Build candidate fallback models list with ultra-stable gemini-2.0-flash as primary fallback
+  // Build candidate fallback models list with ultra-stable gemini-2.5-flash
   const fallbackChain = [
     activeModel,
-    'gemini-2.0-flash',
-    'gemini-2.0-flash-lite',
-    'gemini-1.5-flash'
+    'gemini-2.5-flash',
+    'gemini-3.5-flash',
+    'gemini-3.6-flash'
   ].filter(Boolean).filter((v, i, a) => a.indexOf(v) === i);
 
   let lastError = null;
@@ -304,11 +304,37 @@ export async function runAIProjectSupervisor(targetFolder = null) {
 
   let projectDir = targetFolder;
   if (!projectDir) {
-    projectDir = await input({
-      message: theme.chalkPrimary('Enter cloned website folder path:'),
-      default: './',
-      validate: (val) => fs.existsSync(val.trim()) ? true : 'Directory does not exist.'
-    });
+    const { findLocalWebsiteFolders } = await import('./server.js');
+    const discovered = findLocalWebsiteFolders();
+
+    if (discovered.length > 0) {
+      const choices = discovered.map((d, i) => ({
+        name: `[${i + 1}]  ${d}`,
+        value: d
+      }));
+      choices.push({ name: '[✏️] Custom Folder Path...', value: '__custom__' });
+
+      const selected = await select({
+        message: theme.chalkPrimary.bold('Select website folder to audit and heal:'),
+        choices
+      });
+
+      if (selected === '__custom__') {
+        projectDir = await input({
+          message: theme.chalkPrimary('Enter cloned website folder path:'),
+          default: './',
+          validate: (val) => fs.existsSync(val.trim()) ? true : 'Directory does not exist.'
+        });
+      } else {
+        projectDir = selected;
+      }
+    } else {
+      projectDir = await input({
+        message: theme.chalkPrimary('Enter cloned website folder path:'),
+        default: './',
+        validate: (val) => fs.existsSync(val.trim()) ? true : 'Directory does not exist.'
+      });
+    }
   }
   projectDir = path.resolve(projectDir.trim());
 
@@ -379,18 +405,17 @@ export async function runAIProjectSupervisor(targetFolder = null) {
       totalFixes++;
     }
 
-    // B. Fix preloader scroll lock
+    // B. Fix preloader overlay blocking interactions
     if (content.includes('pl-overlay') || content.includes('preloader') || content.includes('loading-screen')) {
       const unlockScript = `
-<!-- Mirror CLI AI Auto-Healer: Preloader Scroll Fallback -->
+<!-- Mirror CLI AI Auto-Healer: Preloader Fallback -->
 <style>
-  html, body { overflow: visible !important; }
-  .pl-overlay, #preloader, .preloader, #loading { opacity: 0 !important; pointer-events: none !important; display: none !important; }
+  .pl-overlay, #preloader, .preloader, #loading, .loading-screen { opacity: 0 !important; pointer-events: none !important; display: none !important; }
 </style>`;
-      if (!content.includes('Mirror CLI AI Auto-Healer: Preloader Scroll Fallback')) {
+      if (!content.includes('Mirror CLI AI Auto-Healer: Preloader Fallback')) {
         content = content.replace('</head>', `${unlockScript}\n</head>`);
         modified = true;
-        healedActions.push(`Injected preloader scroll auto-unlock in ${path.basename(file)}`);
+        healedActions.push(`Injected preloader auto-dismiss fallback in ${path.basename(file)}`);
         totalFixes++;
       }
     }
@@ -425,7 +450,8 @@ export async function runAIProjectSupervisor(targetFolder = null) {
   const aiSpinner = ora(`Step [3/4]: Performing AI deep inspection with ${theme.chalkAccent(config.model)}...`).start();
 
   const mainIndexFile = htmlFiles.find(f => path.basename(f) === 'index.html') || htmlFiles[0];
-  const indexExcerpt = fs.readFileSync(mainIndexFile, 'utf-8').slice(0, 20000);
+  const rawHtml = fs.readFileSync(mainIndexFile, 'utf-8');
+  const indexExcerpt = cleanHtmlForAI(rawHtml);
 
   const prompt = `Perform an architectural review and health diagnosis of this cloned website index.html:
 \`\`\`html
@@ -486,12 +512,20 @@ Provide a concise, structured markdown report with bullet points.`;
     ));
 
     const openPreview = await confirm({
-      message: theme.chalkPrimary('Would you like to open and preview the healed website now?'),
+      message: theme.chalkPrimary('Would you like to start local live server & preview the website in browser?'),
       default: true
     });
 
     if (openPreview) {
-      await open(mainIndexFile);
+      const { launchPreviewServer } = await import('./server.js');
+      const preview = await launchPreviewServer(projectDir, true);
+      if (preview) {
+        await input({
+          message: theme.chalkPrimary('↵ Press [ENTER] when finished to stop the local preview server')
+        });
+        preview.server.close();
+        console.log(theme.chalkMuted('\n  Local server closed.\n'));
+      }
     }
 
   } catch (err) {

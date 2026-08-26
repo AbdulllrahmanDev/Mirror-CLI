@@ -1,7 +1,7 @@
 {
   "name": "mirror-cli",
-  "version": "1.2.9",
-  "description": "Mirror CLI - Ultra-Fidelity Website Cloner & AI Engineering Suite",
+  "version": "1.3.0",
+  "description": "Ultra-fidelity website mirroring CLI and AI prompt blueprint generator.",
   "type": "module",
   "main": "index.js",
   "bin": {

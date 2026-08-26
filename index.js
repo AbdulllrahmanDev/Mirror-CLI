@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 
 import { crawlSite } from './src/crawler.js';
-import { downloadAssets, getAssetCategoryTelemetry } from './src/downloader.js';
-import { rewriteHTML } from './src/rewriter.js';
+import { downloadAssets, getAssetCategoryTelemetry, resetDownloaderState } from './src/downloader.js';
+import { rewriteHTML, rewriteCSSFiles } from './src/rewriter.js';
 import { packSite } from './src/packager.js';
 import { saveHistoryEntry } from './src/history.js';
 import {
@@ -22,6 +22,9 @@ import {
 import { runSkillInstaller } from './src/skill-installer.js';
 import { runPromptGeneratorWizard } from './src/prompt-generator.js';
 import { runAIMenu, runAIProjectSupervisor } from './src/ai.js';
+import { runUpdateWizard } from './src/updater.js';
+import { runPreviewMenu, launchPreviewServer } from './src/server.js';
+import { runFolderSettingsWizard } from './src/config.js';
 import { confirm } from '@inquirer/prompts';
 import fs from 'fs';
 import path from 'path';
@@ -42,6 +45,17 @@ async function main() {
 
   if (args.includes('--help') || args.includes('-h')) {
     await renderHelp(false);
+    process.exit(0);
+  }
+
+  if (args.includes('--serve') || args.includes('-s') || args.includes('--preview')) {
+    const targetDir = extractArg(args, '--serve') || extractArg(args, '-s') || extractArg(args, '--preview') || './';
+    await launchPreviewServer(targetDir, true);
+    return;
+  }
+
+  if (args.includes('--update') || args.includes('-u')) {
+    await runUpdateWizard(false);
     process.exit(0);
   }
 
@@ -70,12 +84,18 @@ async function main() {
         config = await runInteractiveWizard(false);
       } else if (choice === 'advanced') {
         config = await runInteractiveWizard(true);
+      } else if (choice === 'folders') {
+        await runFolderSettingsWizard();
       } else if (choice === 'ai') {
         await runAIMenu();
       } else if (choice === 'prompt') {
         await runPromptGeneratorWizard();
       } else if (choice === 'skill') {
         await runSkillInstaller();
+      } else if (choice === 'server') {
+        await runPreviewMenu();
+      } else if (choice === 'update') {
+        await runUpdateWizard(true);
       } else if (choice === 'theme') {
         await runThemeSelector();
       } else if (choice === 'history') {
@@ -94,7 +114,7 @@ async function main() {
     }
     const outputDir = extractArg(args, '-o') || extractArg(args, '--output');
     const maxDepth = parseInt(extractArg(args, '-d') || extractArg(args, '--depth') || '3', 10);
-    const skipZip = args.includes('--no-zip');
+    const skipZip = !args.includes('--zip') && !args.includes('-z');
     const verbose = args.includes('--verbose');
 
     config = {
@@ -142,6 +162,7 @@ async function main() {
     crawlSpinner.succeed(`Step [1/4]: Discovered ${pages.length} page(s) successfully.`);
 
     // Step 2: Download Assets
+    resetDownloaderState();
     const downloadSpinner = createSpinner('Step [2/4]: Downloading website assets...').start();
     const allAssets = new Map();
     
@@ -190,7 +211,11 @@ async function main() {
       fs.mkdirSync(path.dirname(pagePath), { recursive: true });
       fs.writeFileSync(pagePath, rewritten, 'utf-8');
     }
-    rewriteSpinner.succeed(`Step [3/4]: Rewrote & saved ${pages.length} HTML document(s).`);
+
+    // Rewrite relative asset URLs in external CSS stylesheets
+    rewriteCSSFiles(outPath, allAssets, targetUrl);
+
+    rewriteSpinner.succeed(`Step [3/4]: Rewrote & saved ${pages.length} HTML document(s) & CSS assets.`);
 
     // Step 4: Packaging
     let zipPath = null;

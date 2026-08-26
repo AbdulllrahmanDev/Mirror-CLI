@@ -1,11 +1,20 @@
 [
   {
-    "timestamp": "2026-08-26T07:38:31.895Z",
+    "timestamp": "2026-08-26T08:36:55.557Z",
     "url": "https://wodniack.dev",
     "outPath": "F:\\Main\\____________\\Mirror-CLI\\wodniack.dev",
     "pagesCount": 1,
+    "assetsCount": 263,
+    "durationMs": 10929,
+    "zipPath": null
+  },
+  {
+    "timestamp": "2026-08-26T08:22:32.129Z",
+    "url": "https://wodniack.dev/",
+    "outPath": "F:\\Main\\____________\\Mirror-CLI\\wodniack.dev",
+    "pagesCount": 1,
     "assetsCount": 259,
-    "durationMs": 84889,
-    "zipPath": "F:\\Main\\____________\\Mirror-CLI\\wodniack.dev.zip"
+    "durationMs": 23103,
+    "zipPath": null
   }
 ]

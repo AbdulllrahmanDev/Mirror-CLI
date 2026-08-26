@@ -117,18 +117,54 @@ export async function crawlSite(startUrl, { maxDepth = 3, verbose = false, onPro
           } catch { /* ignore buffer error */ }
         });
 
+        // 1. Fetch pristine server-rendered HTML (before any client JS mutates text/DOM)
+        let serverHtml = '';
+        try {
+          const httpRes = await fetch(normalized, {
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+              'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+            },
+            signal: AbortSignal.timeout(15000)
+          });
+          if (httpRes.ok) {
+            serverHtml = await httpRes.text();
+          }
+        } catch { /* fallback */ }
+
+        // 2. Load page in headless browser to trigger asset requests, fonts, chunks & lazy loading
         await page.goto(normalized, {
           waitUntil: 'networkidle2',
           timeout: 35000
         });
 
+        // Scroll to trigger lazy-loaded images, fonts, and dynamic asset network requests
         await autoScroll(page);
 
-        // Delay to allow dynamic animations/chunks to finish rendering
-        await page.evaluate(() => new Promise(r => setTimeout(r, 1200)));
+        // Allow lazy network requests to settle
+        await page.evaluate(() => new Promise(r => setTimeout(r, 600)));
 
-        const html = await page.content();
+        const renderedHtml = await page.content();
         const pageUrl = page.url();
+
+        // 3. Choose the cleanest HTML representation:
+        // Use serverHtml if available and rich (SSR / Astro / WordPress / Webflow),
+        // preventing runtime animation mutations (like SplitType double-splitting or frozen transforms).
+        // Use renderedHtml for client-rendered SPA apps (empty <div id="root">).
+        let finalHtml = serverHtml;
+        if (!finalHtml || finalHtml.length < 500) {
+          finalHtml = renderedHtml;
+        } else {
+          try {
+            const bodyContentMatch = serverHtml.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+            const bodyLen = bodyContentMatch ? bodyContentMatch[1].trim().length : 0;
+            if (bodyLen < 300 && renderedHtml.length > serverHtml.length * 2) {
+              finalHtml = renderedHtml;
+            }
+          } catch {
+            finalHtml = serverHtml || renderedHtml;
+          }
+        }
 
         const links = await page.evaluate(() => {
           return Array.from(document.querySelectorAll('a[href]'))
@@ -138,7 +174,7 @@ export async function crawlSite(startUrl, { maxDepth = 3, verbose = false, onPro
 
         pages.push({
           url: normalizeUrl(pageUrl, startUrl) || startNormalized,
-          html,
+          html: finalHtml,
           filename: urlToFilename(pageUrl, startUrl),
           capturedResponses
         });

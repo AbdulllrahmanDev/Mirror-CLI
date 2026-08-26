@@ -179,13 +179,14 @@ function getCleanAssetPath(urlStr, category, outputDir) {
       relPath = path.join(targetSubDir, basename).replace(/\\/g, '/');
     }
 
+    const usedPaths = new Set(filenameCache.values());
     let counter = 1;
     const nameWithoutExt = path.parse(relPath).name;
     const dirName = path.dirname(relPath);
     const ext = path.parse(relPath).ext;
 
     let candidate = relPath;
-    while (fs.existsSync(path.join(outputDir, candidate)) && filenameCache.get(urlStr) !== candidate && counter < 1000) {
+    while (usedPaths.has(candidate) && counter < 1000) {
       candidate = path.join(dirName, `${nameWithoutExt}_${counter}${ext}`).replace(/\\/g, '/');
       counter++;
     }

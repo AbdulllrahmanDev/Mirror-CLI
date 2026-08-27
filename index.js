@@ -37,99 +37,7 @@ function extractArg(args, flag) {
   return null;
 }
 
-async function main() {
-  const themeArg = extractArg(args, '--theme');
-  if (themeArg) {
-    setTheme(themeArg);
-  }
-
-  if (args.includes('--help') || args.includes('-h')) {
-    await renderHelp(false);
-    process.exit(0);
-  }
-
-  if (args.includes('--serve') || args.includes('-s') || args.includes('--preview')) {
-    const targetDir = extractArg(args, '--serve') || extractArg(args, '-s') || extractArg(args, '--preview') || './';
-    await launchPreviewServer(targetDir, true);
-    return;
-  }
-
-  if (args.includes('--update') || args.includes('-u')) {
-    await runUpdateWizard(false);
-    process.exit(0);
-  }
-
-  if (args.includes('--install-skill') || args.includes('--export-skill')) {
-    await runSkillInstaller();
-    process.exit(0);
-  }
-
-  if (args.includes('--prompt') || args.includes('-p')) {
-    await runPromptGeneratorWizard();
-    process.exit(0);
-  }
-
-  if (args.includes('--ai') || args.includes('-a')) {
-    await runAIMenu();
-    process.exit(0);
-  }
-
-  let config = null;
-
-  if (args.length === 0) {
-    while (!config) {
-      const choice = await showMainMenu();
-
-      if (choice === 'quick') {
-        config = await runInteractiveWizard(false);
-      } else if (choice === 'advanced') {
-        config = await runInteractiveWizard(true);
-      } else if (choice === 'folders') {
-        await runFolderSettingsWizard();
-      } else if (choice === 'ai') {
-        await runAIMenu();
-      } else if (choice === 'prompt') {
-        await runPromptGeneratorWizard();
-      } else if (choice === 'skill') {
-        await runSkillInstaller();
-      } else if (choice === 'server') {
-        await runPreviewMenu();
-      } else if (choice === 'update') {
-        await runUpdateWizard(true);
-      } else if (choice === 'theme') {
-        await runThemeSelector();
-      } else if (choice === 'history') {
-        await showHistoryView();
-      } else if (choice === 'help') {
-        await renderHelp(true);
-      } else if (choice === 'exit') {
-        console.log('\n  Goodbye!\n');
-        process.exit(0);
-      }
-    }
-  } else {
-    let targetUrl = args[0];
-    if (!targetUrl.startsWith('http://') && !targetUrl.startsWith('https://')) {
-      targetUrl = `https://${targetUrl}`;
-    }
-    const outputDir = extractArg(args, '-o') || extractArg(args, '--output');
-    const maxDepth = parseInt(extractArg(args, '-d') || extractArg(args, '--depth') || '3', 10);
-    const skipZip = !args.includes('--zip') && !args.includes('-z');
-    const verbose = args.includes('--verbose');
-
-    config = {
-      url: targetUrl,
-      outputDir,
-      maxDepth,
-      skipZip,
-      verbose
-    };
-
-    renderHeader();
-  }
-
-  if (!config) return;
-
+async function runDownloadPipeline(config) {
   const { url: targetUrl, outputDir, maxDepth, skipZip, verbose } = config;
   const startTime = Date.now();
 
@@ -274,7 +182,107 @@ async function main() {
 
   } catch (err) {
     renderError(err, verbose);
-    process.exit(1);
+  }
+}
+
+async function main() {
+  const themeArg = extractArg(args, '--theme');
+  if (themeArg) {
+    setTheme(themeArg);
+  }
+
+  if (args.includes('--help') || args.includes('-h')) {
+    await renderHelp(false);
+    process.exit(0);
+  }
+
+  if (args.includes('--serve') || args.includes('-s') || args.includes('--preview')) {
+    const targetDir = extractArg(args, '--serve') || extractArg(args, '-s') || extractArg(args, '--preview') || './';
+    await launchPreviewServer(targetDir, true);
+    return;
+  }
+
+  if (args.includes('--update') || args.includes('-u')) {
+    await runUpdateWizard(false);
+    process.exit(0);
+  }
+
+  if (args.includes('--install-skill') || args.includes('--export-skill')) {
+    await runSkillInstaller();
+    process.exit(0);
+  }
+
+  if (args.includes('--prompt') || args.includes('-p')) {
+    await runPromptGeneratorWizard();
+    process.exit(0);
+  }
+
+  if (args.includes('--ai') || args.includes('-a')) {
+    await runAIMenu();
+    process.exit(0);
+  }
+
+  if (args.length === 0) {
+    while (true) {
+      try {
+        const choice = await showMainMenu();
+
+        if (choice === 'quick') {
+          const config = await runInteractiveWizard(false);
+          if (config) await runDownloadPipeline(config);
+        } else if (choice === 'advanced') {
+          const config = await runInteractiveWizard(true);
+          if (config) await runDownloadPipeline(config);
+        } else if (choice === 'folders') {
+          await runFolderSettingsWizard();
+        } else if (choice === 'ai') {
+          await runAIMenu();
+        } else if (choice === 'prompt') {
+          await runPromptGeneratorWizard();
+        } else if (choice === 'skill') {
+          await runSkillInstaller();
+        } else if (choice === 'server') {
+          await runPreviewMenu();
+        } else if (choice === 'update') {
+          await runUpdateWizard(true);
+        } else if (choice === 'theme') {
+          await runThemeSelector();
+        } else if (choice === 'history') {
+          await showHistoryView();
+        } else if (choice === 'help') {
+          await renderHelp(true);
+        } else if (choice === 'exit') {
+          console.log('\n  Goodbye!\n');
+          process.exit(0);
+        }
+      } catch (err) {
+        if (err.name === 'ExitPromptError') {
+          console.log('\n  Goodbye!\n');
+          process.exit(0);
+        }
+        throw err;
+      }
+    }
+  } else {
+    let targetUrl = args[0];
+    if (!targetUrl.startsWith('http://') && !targetUrl.startsWith('https://')) {
+      targetUrl = `https://${targetUrl}`;
+    }
+    const outputDir = extractArg(args, '-o') || extractArg(args, '--output');
+    const maxDepth = parseInt(extractArg(args, '-d') || extractArg(args, '--depth') || '3', 10);
+    const skipZip = !args.includes('--zip') && !args.includes('-z');
+    const verbose = args.includes('--verbose');
+
+    const config = {
+      url: targetUrl,
+      outputDir,
+      maxDepth,
+      skipZip,
+      verbose
+    };
+
+    renderHeader();
+    await runDownloadPipeline(config);
   }
 }
 

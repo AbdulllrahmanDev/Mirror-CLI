@@ -83,7 +83,8 @@ export async function crawlSite(startUrl, { maxDepth = 3, verbose = false, onPro
       '--disable-dev-shm-usage',
       '--disable-web-security',
       '--allow-running-insecure-content',
-      '--disable-features=IsolateOrigins,site-per-process'
+      '--disable-features=IsolateOrigins,site-per-process',
+      '--autoplay-policy=no-user-gesture-required'
     ]
   });
 
@@ -133,10 +134,23 @@ export async function crawlSite(startUrl, { maxDepth = 3, verbose = false, onPro
         } catch { /* fallback */ }
 
         // 2. Load page in headless browser to trigger asset requests, fonts, chunks & lazy loading
-        await page.goto(normalized, {
-          waitUntil: 'networkidle2',
-          timeout: 35000
-        });
+        try {
+          await page.goto(normalized, {
+            waitUntil: 'domcontentloaded',
+            timeout: 25000
+          });
+
+          // Wait for network to settle with graceful fallback timeout
+          try {
+            await Promise.race([
+              page.waitForNetworkIdle({ idleTime: 500, timeout: 8000 }),
+              new Promise(r => setTimeout(r, 5000))
+            ]);
+          } catch { /* proceed with available DOM */ }
+        } catch (navErr) {
+          // If navigation had a partial timeout, proceed if DOM is accessible
+          if (verbose) console.warn(`  Notice: Initial navigation warning on ${normalized} (${navErr.message}) - continuing with loaded DOM...`);
+        }
 
         // Scroll to trigger lazy-loaded images, fonts, and dynamic asset network requests
         await autoScroll(page);
@@ -144,8 +158,13 @@ export async function crawlSite(startUrl, { maxDepth = 3, verbose = false, onPro
         // Allow lazy network requests to settle
         await page.evaluate(() => new Promise(r => setTimeout(r, 600)));
 
-        const renderedHtml = await page.content();
-        const pageUrl = page.url();
+        let renderedHtml = '';
+        try {
+          renderedHtml = await page.content();
+        } catch {
+          renderedHtml = serverHtml;
+        }
+        const pageUrl = page.url() || normalized;
 
         // 3. Choose the cleanest HTML representation:
         // Use serverHtml if available and rich (SSR / Astro / WordPress / Webflow),

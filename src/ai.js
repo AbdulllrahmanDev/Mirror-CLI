@@ -557,7 +557,7 @@ export async function runAIProjectSupervisor(targetFolder = null) {
 
   if (htmlFiles.length === 0) {
     auditSpinner.warn('No HTML files found in the specified directory.');
-    await input({ message: theme.chalkPrimary('↵ Press [ENTER] to return to AI Menu') });
+    await input({ message: theme.chalkPrimary('↵ Press [ENTER] to return to Main Menu') });
     return;
   }
 
@@ -793,7 +793,7 @@ Provide a concise, structured markdown report with bullet points.`;
     aiSpinner.fail('AI deep review encountered an error: ' + err.message);
   }
 
-  await input({ message: theme.chalkPrimary('↵ Press [ENTER] to return to AI Menu') });
+  await input({ message: theme.chalkPrimary('↵ Press [ENTER] to return to Main Menu') });
 }
 
 /**
@@ -946,7 +946,7 @@ Requirements:
     genSpinner.fail('Generation failed: ' + err.message);
   }
 
-  await input({ message: theme.chalkPrimary('↵ Press [ENTER] to return to AI Menu') });
+  await input({ message: theme.chalkPrimary('↵ Press [ENTER] to return to Main Menu') });
 }
 
 /**
@@ -1005,7 +1005,7 @@ Tasks:
     console.log(chalk.red(`\n❌ Error: ${err.message}\n`));
   }
 
-  await input({ message: theme.chalkPrimary('↵ Press [ENTER] to return to AI Menu') });
+  await input({ message: theme.chalkPrimary('↵ Press [ENTER] to return to Main Menu') });
 }
 
 /**
@@ -1088,7 +1088,7 @@ Return a valid JSON object containing:
     console.log(chalk.red(`\n❌ Error: ${err.message}\n`));
   }
 
-  await input({ message: theme.chalkPrimary('↵ Press [ENTER] to return to AI Menu') });
+  await input({ message: theme.chalkPrimary('↵ Press [ENTER] to return to Main Menu') });
 }
 
 

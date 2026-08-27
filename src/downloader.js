@@ -217,9 +217,10 @@ async function runWithConcurrency(tasks, limit = 12) {
 function extractAssetUrls(html, baseUrl) {
   const urls = new Set();
 
-  const srcRegex = /(?:src|href|content|poster|data-src|data-href)\s*=\s*["']([^"']+)["']/gi;
+  // 1. Tag attributes (src, href, data-src, poster, etc.)
+  const attrRegex = /(?:src|href|content|poster|data-src|data-href|data-poster|data-original|data-lazy-src|data-image|data-bg|data-background)\s*=\s*["']([^"']+)["']/gi;
   let match;
-  while ((match = srcRegex.exec(html)) !== null) {
+  while ((match = attrRegex.exec(html)) !== null) {
     try {
       const href = match[1].trim();
       if (!href || href.startsWith('data:') || href.startsWith('javascript:') || href.startsWith('#')) continue;
@@ -230,11 +231,24 @@ function extractAssetUrls(html, baseUrl) {
     } catch { /* skip */ }
   }
 
+  // 2. CSS url(...) references in HTML / style tags
   const cssUrlRegex = /url\((['"]?)([^'")]+)\1\)/gi;
   while ((match = cssUrlRegex.exec(html)) !== null) {
     try {
       const href = match[2].trim();
-      if (!href || href.startsWith('data:')) continue;
+      if (!href || href.startsWith('data:') || href.startsWith('#')) continue;
+      const resolved = new URL(href, baseUrl).href;
+      if (resolved.startsWith('http://') || resolved.startsWith('https://')) {
+        urls.add(resolved);
+      }
+    } catch { /* skip */ }
+  }
+
+  // 3. String literals in JS scripts (e.g. "/images/...", "/_astro/...", etc.)
+  const jsAssetRegex = /["'](\/(?:assets|images|media|fonts|static|_astro|public)[^"'\s<>]+\.(?:png|jpg|jpeg|svg|webp|gif|mp4|webm|woff2|woff|ttf|eot))["']/gi;
+  while ((match = jsAssetRegex.exec(html)) !== null) {
+    try {
+      const href = match[1].trim();
       const resolved = new URL(href, baseUrl).href;
       if (resolved.startsWith('http://') || resolved.startsWith('https://')) {
         urls.add(resolved);
@@ -265,7 +279,7 @@ export async function downloadAssets(html, pageUrl, outputDir, capturedResponses
     }
   }
 
-  // 2. Process all extracted asset URLs from static HTML
+  // 2. Process all extracted asset URLs from static HTML & JS
   const urls = extractAssetUrls(html, pageUrl);
   let completedCount = 0;
 
@@ -294,6 +308,46 @@ export async function downloadAssets(html, pageUrl, outputDir, capturedResponses
   });
 
   await runWithConcurrency(tasks, 12);
+
+  // 3. Scan all downloaded CSS files for internal url(...) assets (fonts, sprite masks, background images)
+  const cssDir = path.join(outputDir, 'assets/css');
+  if (fs.existsSync(cssDir)) {
+    const cssFiles = fs.readdirSync(cssDir).filter(f => f.endsWith('.css'));
+    const cssAssetUrls = new Set();
+
+    for (const cssFile of cssFiles) {
+      try {
+        const cssContent = fs.readFileSync(path.join(cssDir, cssFile), 'utf-8');
+        const cssUrlRegex = /url\((['"]?)([^'")]+)\1\)/gi;
+        let match;
+        while ((match = cssUrlRegex.exec(cssContent)) !== null) {
+          const rawUrl = match[2].trim();
+          if (!rawUrl || rawUrl.startsWith('data:') || rawUrl.startsWith('#')) continue;
+          try {
+            const resolved = new URL(rawUrl, pageUrl).href;
+            if ((resolved.startsWith('http://') || resolved.startsWith('https://')) && !globalAssetMap.has(resolved)) {
+              cssAssetUrls.add(resolved);
+            }
+          } catch { /* skip */ }
+        }
+      } catch { /* skip */ }
+    }
+
+    if (cssAssetUrls.size > 0) {
+      const cssTasks = [...cssAssetUrls].map((assetUrl) => async () => {
+        const category = classifyAsset(assetUrl);
+        if (category === 'page' || isTrackerOrAnalytics(assetUrl)) return;
+        const cleanRelPath = getCleanAssetPath(assetUrl, category, outputDir);
+        const localPath = path.join(outputDir, cleanRelPath);
+        const result = await downloadFile(assetUrl, localPath);
+        if (result || fs.existsSync(localPath)) {
+          registerAssetInMap(assetUrl, cleanRelPath);
+        }
+      });
+      await runWithConcurrency(cssTasks, 8);
+    }
+  }
+
   return globalAssetMap;
 }
 

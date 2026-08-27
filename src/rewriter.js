@@ -177,13 +177,21 @@ export function rewriteHTML(html, pageUrl, baseUrl, assetMap, pageMap = new Map(
     });
   }
 
-  // 6. Update Images & Media
-  $('img, source, video, audio, track, embed, iframe').each((_, el) => {
-    const src = $(el).attr('src');
-    if (src) {
-      const resolved = resolveAssetPath(src, pageUrl, assetMap, pageFilename);
-      if (resolved) $(el).attr('src', resolved);
-    }
+  // 6. Update Images & Media (including data-src, poster, data-bg)
+  $('img, source, video, audio, track, embed, iframe, [data-src], [data-href], [data-poster], [data-bg]').each((_, el) => {
+    ['src', 'data-src', 'data-href', 'data-poster', 'poster', 'data-original', 'data-lazy-src', 'data-image', 'data-bg'].forEach(attr => {
+      const val = $(el).attr(attr);
+      if (val) {
+        const resolved = resolveAssetPath(val, pageUrl, assetMap, pageFilename);
+        if (resolved) {
+          $(el).attr(attr, resolved);
+        } else if (val.startsWith('/_astro/') || val.startsWith('/assets/')) {
+          // Fallback root resolution
+          const clean = val.replace(/^\//, '');
+          $(el).attr(attr, toRelative(pageFilename, clean.startsWith('assets/') ? clean : `assets/misc/${path.basename(clean)}`));
+        }
+      }
+    });
 
     const srcset = $(el).attr('srcset');
     if (srcset) {
@@ -222,6 +230,11 @@ export function rewriteHTML(html, pageUrl, baseUrl, assetMap, pageMap = new Map(
   $('a[href]').each((_, el) => {
     const href = $(el).attr('href');
     if (!href || href.startsWith('#') || href.startsWith('javascript:') || href.startsWith('mailto:') || href.startsWith('tel:')) {
+      return;
+    }
+
+    if (href.includes('cdn-cgi/l/email-protection')) {
+      $(el).attr('href', 'mailto:contact@' + (new URL(pageUrl).hostname || 'domain.com'));
       return;
     }
 
@@ -272,6 +285,23 @@ export function rewriteHTML(html, pageUrl, baseUrl, assetMap, pageMap = new Map(
 }
 
 export function rewriteCSSFiles(outputDir, assetMap, baseUrl) {
+  // Build a fast lookup for all actual files on disk inside assets/
+  const diskAssets = new Map(); // basename -> relativePathFromOutputDir
+  function indexDiskFiles(dir) {
+    if (!fs.existsSync(dir)) return;
+    const entries = fs.readdirSync(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        indexDiskFiles(full);
+      } else if (entry.isFile()) {
+        const rel = path.relative(outputDir, full).replace(/\\/g, '/');
+        diskAssets.set(entry.name, rel);
+      }
+    }
+  }
+  indexDiskFiles(path.join(outputDir, 'assets'));
+
   function scanAndRewrite(dir) {
     if (!fs.existsSync(dir)) return;
     const entries = fs.readdirSync(dir, { withFileTypes: true });
@@ -283,11 +313,24 @@ export function rewriteCSSFiles(outputDir, assetMap, baseUrl) {
         try {
           let css = fs.readFileSync(fullPath, 'utf-8');
           const relCssPath = path.relative(outputDir, fullPath).replace(/\\/g, '/');
+          const cssDir = path.dirname(fullPath);
 
           css = css.replace(/url\((['"]?)([^'")]+)\1\)/gi, (match, quote, href) => {
             const hrefTrimmed = href.trim();
             if (!hrefTrimmed || hrefTrimmed.startsWith('data:') || hrefTrimmed.startsWith('#')) return match;
-            const resolved = resolveAssetPath(hrefTrimmed, baseUrl, assetMap, relCssPath);
+
+            // 1. Try resolving via assetMap
+            let resolved = resolveAssetPath(hrefTrimmed, baseUrl, assetMap, relCssPath);
+
+            // 2. Validate existence on disk or fallback to filename disk matching
+            const filename = path.basename(hrefTrimmed.split('?')[0].split('#')[0]);
+            if (diskAssets.has(filename)) {
+              const actualRelPath = diskAssets.get(filename);
+              const targetFullPath = path.join(outputDir, actualRelPath);
+              resolved = path.relative(cssDir, targetFullPath).replace(/\\/g, '/');
+              if (!resolved.startsWith('.')) resolved = './' + resolved;
+            }
+
             if (resolved) {
               return `url('${resolved}')`;
             }
@@ -300,4 +343,44 @@ export function rewriteCSSFiles(outputDir, assetMap, baseUrl) {
     }
   }
   scanAndRewrite(outputDir);
+}
+
+export function rewriteJSFiles(outputDir) {
+  const diskImages = new Map();
+  const imagesDir = path.join(outputDir, 'assets/images');
+  if (fs.existsSync(imagesDir)) {
+    for (const f of fs.readdirSync(imagesDir)) {
+      diskImages.set(f, `./assets/images/${f}`);
+    }
+  }
+
+  function scanAndFixJS(dir) {
+    if (!fs.existsSync(dir)) return;
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory() && entry.name !== 'node_modules') {
+        scanAndFixJS(full);
+      } else if (entry.isFile() && entry.name.endsWith('.js')) {
+        try {
+          let js = fs.readFileSync(full, 'utf-8');
+          let modified = false;
+
+          // Rewrite root image strings like "/images/asset-smiley--main.svg"
+          for (const [basename, relPath] of diskImages) {
+            const pattern = new RegExp(`["']/images/${basename}["']`, 'g');
+            if (pattern.test(js)) {
+              js = js.replace(pattern, `"${relPath}"`);
+              modified = true;
+            }
+          }
+
+          if (modified) {
+            fs.writeFileSync(full, js, 'utf-8');
+          }
+        } catch { /* skip */ }
+      }
+    }
+  }
+
+  scanAndFixJS(path.join(outputDir, 'assets/js'));
 }

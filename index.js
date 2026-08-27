@@ -2,7 +2,7 @@
 
 import { crawlSite } from './src/crawler.js';
 import { downloadAssets, getAssetCategoryTelemetry, resetDownloaderState } from './src/downloader.js';
-import { rewriteHTML, rewriteCSSFiles } from './src/rewriter.js';
+import { rewriteHTML, rewriteCSSFiles, rewriteJSFiles } from './src/rewriter.js';
 import { packSite } from './src/packager.js';
 import { saveHistoryEntry } from './src/history.js';
 import {
@@ -175,7 +175,8 @@ async function main() {
       const assets = await downloadAssets(
         page.html,
         targetUrl,
-        assetsDir,
+        outPath,
+        page.capturedResponses || new Map(),
         verbose,
         (assetUrl, done, total) => {
           downloadSpinner.text = `Step [2/4]: Downloading assets [${done}/${total}] for ${pageName}...`;
@@ -213,8 +214,9 @@ async function main() {
       fs.writeFileSync(pagePath, rewritten, 'utf-8');
     }
 
-    // Rewrite relative asset URLs in external CSS stylesheets
+    // Rewrite relative asset URLs in external CSS stylesheets and JS bundles
     rewriteCSSFiles(outPath, allAssets, targetUrl);
+    rewriteJSFiles(outPath);
 
     rewriteSpinner.succeed(`Step [3/4]: Rewrote & saved ${pages.length} HTML document(s) & CSS assets.`);
 

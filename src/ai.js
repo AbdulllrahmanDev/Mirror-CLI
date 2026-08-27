@@ -613,8 +613,95 @@ export async function runAIProjectSupervisor(targetFolder = null) {
       totalFixes++;
     }
 
+    // D. Auto-heal lazy-loaded data-src and media references
+    if (content.includes('data-src=') || content.includes('/_astro/')) {
+      content = content.replace(/data-src=["'](?:\/_astro\/|\/assets\/misc\/)([^"']+)["']/gi, (m, file) => {
+        modified = true;
+        totalFixes++;
+        return `data-src="./assets/misc/${file}"`;
+      });
+      content = content.replace(/href=["'](?:\.\/)?cdn-cgi\/l\/email-protection[^"']*["']/gi, () => {
+        modified = true;
+        totalFixes++;
+        return 'href="mailto:contact@domain.com"';
+      });
+    }
+
     if (modified) {
       fs.writeFileSync(file, content, 'utf-8');
+    }
+  }
+
+  // Auto-heal CSS url(...) paths against real disk files
+  const cssDir = path.join(projectDir, 'assets/css');
+  if (fs.existsSync(cssDir)) {
+    const diskAssets = new Map();
+    function mapAssets(dir) {
+      if (!fs.existsSync(dir)) return;
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) mapAssets(full);
+        else if (entry.isFile()) diskAssets.set(entry.name, full);
+      }
+    }
+    mapAssets(path.join(projectDir, 'assets'));
+
+    for (const cssFile of fs.readdirSync(cssDir).filter(f => f.endsWith('.css'))) {
+      const fullCssPath = path.join(cssDir, cssFile);
+      let css = fs.readFileSync(fullCssPath, 'utf-8');
+      let cssModified = false;
+
+      css = css.replace(/url\((['"]?)([^'")]+)\1\)/gi, (match, quote, href) => {
+        const hrefTrimmed = href.trim();
+        if (!hrefTrimmed || hrefTrimmed.startsWith('data:') || hrefTrimmed.startsWith('#')) return match;
+
+        const resolvedLocal = path.resolve(cssDir, hrefTrimmed);
+        if (!fs.existsSync(resolvedLocal)) {
+          const filename = path.basename(hrefTrimmed.split('?')[0].split('#')[0]);
+          if (diskAssets.has(filename)) {
+            const actualPath = diskAssets.get(filename);
+            let rel = path.relative(cssDir, actualPath).replace(/\\/g, '/');
+            if (!rel.startsWith('.')) rel = './' + rel;
+            cssModified = true;
+            totalFixes++;
+            return `url('${rel}')`;
+          }
+        }
+        return match;
+      });
+
+      if (cssModified) {
+        fs.writeFileSync(fullCssPath, css, 'utf-8');
+        healedActions.push(`Auto-healed broken font/image relative paths in ${cssFile}`);
+      }
+    }
+  }
+
+  // Auto-heal JS root string paths
+  const jsDir = path.join(projectDir, 'assets/js');
+  if (fs.existsSync(jsDir)) {
+    const imagesDir = path.join(projectDir, 'assets/images');
+    if (fs.existsSync(imagesDir)) {
+      const imgNames = fs.readdirSync(imagesDir);
+      for (const jsFile of fs.readdirSync(jsDir).filter(f => f.endsWith('.js'))) {
+        const fullJsPath = path.join(jsDir, jsFile);
+        let js = fs.readFileSync(fullJsPath, 'utf-8');
+        let jsModified = false;
+
+        for (const img of imgNames) {
+          const pat = new RegExp(`["']/images/${img}["']`, 'g');
+          if (pat.test(js)) {
+            js = js.replace(pat, `"./assets/images/${img}"`);
+            jsModified = true;
+            totalFixes++;
+          }
+        }
+
+        if (jsModified) {
+          fs.writeFileSync(fullJsPath, js, 'utf-8');
+          healedActions.push(`Auto-healed asset paths in ${jsFile}`);
+        }
+      }
     }
   }
 

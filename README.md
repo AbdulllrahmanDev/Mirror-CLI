@@ -148,15 +148,33 @@ mirror https://example.com --verbose
 
 ---
 
-### 🤖 3. Antigravity IDE Integration (`/Mirror`)
+### 🤖 3. Universal AI IDE & Assistant Skill (`/Mirror`)
 
-Mirror CLI natively registers as an **Antigravity AI Skill**! In your AI chat, you can type:
+Mirror CLI includes a **Universal AI Agent Skill (`SKILL.md` / `.cursorrules` / `.windsurfrules`)** compatible with **ANY AI IDE or Coding Assistant**:
 
+| AI Environment | How to Trigger / Configure | Location |
+| :--- | :--- | :--- |
+| **Cursor IDE** | Type `/Mirror <url>` in Composer / Agent chat | `.cursor/rules/mirror-skill.mdc` |
+| **Windsurf IDE (Cascade)** | Type `/Mirror <url>` or ask Cascade directly | `.windsurf/rules/mirror-skill.md` |
+| **Claude Code & Anthropic** | Ask in terminal: `mirror and analyze <url>` | `.claude/skills/mirror-skill/` |
+| **Google Antigravity / Gemini** | Type `/Mirror <url>` in Chat | `.agents/skills/mirror-skill/` |
+| **GitHub Copilot & Workspace** | Mention `/Mirror` or ask in Copilot Chat | `.github/copilot-instructions.md` |
+| **Cline / Roo Code / Continue** | Standard Open Agent Skill | Workspace root rules |
+
+#### How It Works:
+Simply ask your AI assistant:
 ```text
 /Mirror https://example.com
 ```
+or
+```text
+Clone https://example.com using Mirror CLI and generate site_details.md
+```
 
-This triggers the active AI supervisor to clone, verify asset integrity, and generate a pixel-perfect `site_details.md` specification file inside your workspace.
+The AI Agent will automatically:
+1. Run Mirror CLI with resilient crawling and asset discovery.
+2. Auto-supervise progress, repairing any font or CSS path mismatches.
+3. Generate a comprehensive **`site_details.md`** master prompt with complete color tokens, motion physics, component architecture, and responsive layouts.
 
 ---
 

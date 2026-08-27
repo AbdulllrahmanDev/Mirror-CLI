@@ -177,16 +177,15 @@ export function rewriteHTML(html, pageUrl, baseUrl, assetMap, pageMap = new Map(
     });
   }
 
-  // 6. Update Images & Media (including data-src, poster, data-bg)
-  $('img, source, video, audio, track, embed, iframe, [data-src], [data-href], [data-poster], [data-bg]').each((_, el) => {
-    ['src', 'data-src', 'data-href', 'data-poster', 'poster', 'data-original', 'data-lazy-src', 'data-image', 'data-bg'].forEach(attr => {
+  // 6. Update Images & Media (including data-src, poster, data-bg, svg images, srcset)
+  $('img, source, video, audio, track, embed, iframe, image, use, [data-src], [data-href], [data-poster], [data-bg], [data-image]').each((_, el) => {
+    ['src', 'data-src', 'data-href', 'data-poster', 'poster', 'data-original', 'data-lazy-src', 'data-image', 'data-bg', 'href', 'xlink:href'].forEach(attr => {
       const val = $(el).attr(attr);
-      if (val) {
+      if (val && !val.startsWith('#')) {
         const resolved = resolveAssetPath(val, pageUrl, assetMap, pageFilename);
         if (resolved) {
           $(el).attr(attr, resolved);
         } else if (val.startsWith('/_astro/') || val.startsWith('/assets/')) {
-          // Fallback root resolution
           const clean = val.replace(/^\//, '');
           $(el).attr(attr, toRelative(pageFilename, clean.startsWith('assets/') ? clean : `assets/misc/${path.basename(clean)}`));
         }
@@ -197,6 +196,12 @@ export function rewriteHTML(html, pageUrl, baseUrl, assetMap, pageMap = new Map(
     if (srcset) {
       const newSrcset = rewriteSrcset(srcset, pageUrl, assetMap, pageFilename);
       if (newSrcset) $(el).attr('srcset', newSrcset);
+    }
+
+    const dataSrcset = $(el).attr('data-srcset');
+    if (dataSrcset) {
+      const newSrcset = rewriteSrcset(dataSrcset, pageUrl, assetMap, pageFilename);
+      if (newSrcset) $(el).attr('data-srcset', newSrcset);
     }
   });
 

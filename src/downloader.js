@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
-import { get } from 'https';
+import https from 'https';
+import http from 'http';
 import { URL } from 'url';
 import crypto from 'crypto';
 
@@ -31,107 +32,123 @@ export function registerAssetInMap(assetUrl, cleanRelPath) {
   } catch { /* skip */ }
 }
 
-function downloadFile(urlStr, destPath, retries = 3) {
-  return new Promise((resolve) => {
-    if (fs.existsSync(destPath)) {
-      resolve(destPath);
-      return;
-    }
-    if (downloading.has(urlStr)) {
-      resolve(destPath);
-      return;
-    }
-    downloading.add(urlStr);
+async function downloadFile(urlStr, destPath, retries = 3) {
+  if (fs.existsSync(destPath)) return destPath;
+  if (downloading.has(urlStr)) return destPath;
+  downloading.add(urlStr);
 
-    const attempt = (attemptsLeft) => {
-      try {
-        fs.mkdirSync(path.dirname(destPath), { recursive: true });
+  try {
+    fs.mkdirSync(path.dirname(destPath), { recursive: true });
 
-        const u = new URL(urlStr);
-        const options = {
-          hostname: u.hostname,
-          path: u.pathname + u.search,
-          port: u.port || (u.protocol === 'https:' ? 443 : 80),
-          method: 'GET',
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept': '*/*'
-          },
-          rejectUnauthorized: false,
-          timeout: 15000
-        };
+    // 1. Try modern native fetch (handles HTTP/2, TLS, Brotli/Gzip, and redirects automatically)
+    try {
+      const res = await fetch(urlStr, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept': '*/*'
+        },
+        signal: AbortSignal.timeout(15000)
+      });
+      if (res.ok) {
+        const arrayBuf = await res.arrayBuffer();
+        fs.writeFileSync(destPath, Buffer.from(arrayBuf));
+        downloading.delete(urlStr);
+        return destPath;
+      }
+    } catch { /* fallback to http/https get */ }
 
-        const req = get(options, (res) => {
-          if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-            try {
-              const redirectUrl = new URL(res.headers.location, urlStr).href;
-              downloading.delete(urlStr);
-              downloadFile(redirectUrl, destPath, attemptsLeft - 1).then(resolve);
-              return;
-            } catch {
-              downloading.delete(urlStr);
-              resolve(null);
-              return;
-            }
-          }
+    // 2. Fallback to https / http module
+    const u = new URL(urlStr);
+    const client = u.protocol === 'http:' ? http : https;
+    const options = {
+      hostname: u.hostname,
+      path: u.pathname + u.search,
+      port: u.port || (u.protocol === 'http:' ? 80 : 443),
+      method: 'GET',
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': '*/*'
+      },
+      rejectUnauthorized: false,
+      timeout: 15000
+    };
 
-          if (res.statusCode !== 200) {
+    const buffer = await new Promise((resolve) => {
+      const req = client.get(options, (res) => {
+        if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+          try {
+            const redirectUrl = new URL(res.headers.location, urlStr).href;
             downloading.delete(urlStr);
+            downloadFile(redirectUrl, destPath, retries - 1).then(resolve);
+            return;
+          } catch {
             resolve(null);
             return;
           }
+        }
+        if (res.statusCode !== 200) {
+          resolve(null);
+          return;
+        }
+        const chunks = [];
+        res.on('data', chunk => chunks.push(chunk));
+        res.on('end', () => resolve(Buffer.concat(chunks)));
+      });
+      req.on('error', () => resolve(null));
+      req.on('timeout', () => { req.destroy(); resolve(null); });
+    });
 
-          const chunks = [];
-          res.on('data', (chunk) => chunks.push(chunk));
-          res.on('end', () => {
-            try {
-              fs.writeFileSync(destPath, Buffer.concat(chunks));
-              downloading.delete(urlStr);
-              resolve(destPath);
-            } catch {
-              downloading.delete(urlStr);
-              resolve(null);
-            }
-          });
-        });
-
-        req.on('error', () => {
-          if (attemptsLeft > 1) {
-            setTimeout(() => attempt(attemptsLeft - 1), 500);
-          } else {
-            downloading.delete(urlStr);
-            resolve(null);
-          }
-        });
-
-        req.on('timeout', () => {
-          req.destroy();
-          if (attemptsLeft > 1) {
-            setTimeout(() => attempt(attemptsLeft - 1), 500);
-          } else {
-            downloading.delete(urlStr);
-            resolve(null);
-          }
-        });
-      } catch {
-        downloading.delete(urlStr);
-        resolve(null);
-      }
-    };
-
-    attempt(retries);
-  });
+    if (buffer) {
+      fs.writeFileSync(destPath, buffer);
+      downloading.delete(urlStr);
+      return destPath;
+    }
+  } catch {
+    // skip
+  } finally {
+    downloading.delete(urlStr);
+  }
+  return null;
 }
 
 function classifyAsset(urlStr) {
   try {
     const u = new URL(urlStr);
     const pathname = u.pathname.toLowerCase();
-    if (pathname.match(/\.(png|jpg|jpeg|gif|svg|webp|ico|avif|bmp)$/)) return 'img';
-    if (pathname.match(/\.(css)$/)) return 'css';
+    const search = u.search.toLowerCase();
+
+    // Images
+    if (
+      pathname.match(/\.(png|jpg|jpeg|gif|svg|webp|ico|avif|bmp|tiff)$/) ||
+      search.includes('format=') ||
+      search.includes('image') ||
+      pathname.includes('/image') ||
+      pathname.includes('/img') ||
+      pathname.includes('/photos/') ||
+      pathname.includes('/wp-content/uploads/') ||
+      u.hostname.includes('unsplash.com') ||
+      u.hostname.includes('cloudinary.com') ||
+      u.hostname.includes('imgix.net') ||
+      u.hostname.includes('shopify.com')
+    ) {
+      return 'img';
+    }
+
+    // Stylesheets
+    if (pathname.match(/\.(css)$/) || search.includes('css')) return 'css';
+
+    // JavaScript
     if (pathname.match(/\.(js|mjs|cjs)$/)) return 'js';
-    if (pathname.match(/\.(woff|woff2|ttf|eot|otf)$/)) return 'font';
+
+    // Fonts
+    if (pathname.match(/\.(woff|woff2|ttf|eot|otf)$/) || search.includes('font')) return 'font';
+
+    // 3D Models & Audio / Video
+    if (pathname.match(/\.(glb|gltf|bin|hdr|obj|fbx|wasm|mp4|webm|mov|mp3|wav|ogg)$/)) return 'other';
+
+    // HTML Pages
     if (pathname.match(/\.(html|htm|php|asp|aspx)$/) || pathname.endsWith('/')) return 'page';
+
     return 'other';
   } catch {
     return 'other';
@@ -170,7 +187,20 @@ function getCleanAssetPath(urlStr, category, outputDir) {
 
       let basename = path.basename(pathname);
       if (!basename || basename === '/' || !basename.includes('.')) {
-        const ext = category === 'css' ? '.css' : category === 'js' ? '.js' : category === 'img' ? '.png' : '.bin';
+        let ext = '.bin';
+        if (category === 'img') {
+          if (urlStr.includes('.webp') || urlStr.includes('format=webp')) ext = '.webp';
+          else if (urlStr.includes('.svg') || urlStr.includes('image/svg')) ext = '.svg';
+          else if (urlStr.includes('.png') || urlStr.includes('format=png')) ext = '.png';
+          else if (urlStr.includes('.avif') || urlStr.includes('format=avif')) ext = '.avif';
+          else ext = '.jpg';
+        } else if (category === 'css') {
+          ext = '.css';
+        } else if (category === 'js') {
+          ext = '.js';
+        } else if (category === 'font') {
+          ext = '.woff2';
+        }
         basename = `asset_${crypto.createHash('md5').update(urlStr).digest('hex').slice(0, 8)}${ext}`;
       }
       basename = basename.replace(/[<>:"/\\|?*]/g, '_');
@@ -217,8 +247,8 @@ async function runWithConcurrency(tasks, limit = 12) {
 function extractAssetUrls(html, baseUrl) {
   const urls = new Set();
 
-  // 1. Tag attributes (src, href, data-src, poster, etc.)
-  const attrRegex = /(?:src|href|content|poster|data-src|data-href|data-poster|data-original|data-lazy-src|data-image|data-bg|data-background)\s*=\s*["']([^"']+)["']/gi;
+  // 1. Tag attributes (src, href, poster, data-src, etc.)
+  const attrRegex = /(?:src|href|content|poster|data-src|data-href|data-poster|data-original|data-lazy-src|data-image|data-bg|data-background|xlink:href)\s*=\s*["']([^"']+)["']/gi;
   let match;
   while ((match = attrRegex.exec(html)) !== null) {
     try {
@@ -231,7 +261,25 @@ function extractAssetUrls(html, baseUrl) {
     } catch { /* skip */ }
   }
 
-  // 2. CSS url(...) references in HTML / style tags
+  // 2. Srcset attributes (img srcset, source srcset, data-srcset)
+  const srcsetRegex = /(?:srcset|data-srcset)\s*=\s*["']([^"']+)["']/gi;
+  while ((match = srcsetRegex.exec(html)) !== null) {
+    try {
+      const srcsetVal = match[1].trim();
+      const parts = srcsetVal.split(',');
+      for (const part of parts) {
+        const item = part.trim().split(/\s+/)[0];
+        if (item && !item.startsWith('data:')) {
+          const resolved = new URL(item, baseUrl).href;
+          if (resolved.startsWith('http://') || resolved.startsWith('https://')) {
+            urls.add(resolved);
+          }
+        }
+      }
+    } catch { /* skip */ }
+  }
+
+  // 3. CSS url(...) references in HTML / style tags
   const cssUrlRegex = /url\((['"]?)([^'")]+)\1\)/gi;
   while ((match = cssUrlRegex.exec(html)) !== null) {
     try {
@@ -244,8 +292,8 @@ function extractAssetUrls(html, baseUrl) {
     } catch { /* skip */ }
   }
 
-  // 3. String literals in JS scripts (e.g. "/images/...", "/_astro/...", etc.)
-  const jsAssetRegex = /["'](\/(?:assets|images|media|fonts|static|_astro|public)[^"'\s<>]+\.(?:png|jpg|jpeg|svg|webp|gif|mp4|webm|woff2|woff|ttf|eot))["']/gi;
+  // 4. String literals in JS scripts (e.g. "/images/...", "/_astro/...", etc.)
+  const jsAssetRegex = /["'](\/(?:assets|images|img|media|fonts|static|_astro|_next|public)[^"'\s<>]+\.(?:png|jpg|jpeg|svg|webp|avif|gif|ico|bmp|mp4|webm|woff2|woff|ttf|eot))["']/gi;
   while ((match = jsAssetRegex.exec(html)) !== null) {
     try {
       const href = match[1].trim();
